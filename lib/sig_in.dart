@@ -199,11 +199,11 @@ class _SignInScreenState extends State<SignInScreen> {
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            _buildSocialButton(
-                              assetPath: 'assets/fb.png',
-                              label: 'Facebook',
-                              fallbackIcon: Icons.facebook,
-                            ),
+                            // _buildSocialButton(
+                            //   assetPath: 'assets/fb.png',
+                            //   label: 'Facebook',
+                            //   fallbackIcon: Icons.facebook,
+                            // ),
                             const SizedBox(width: 20),
                             _buildSocialButton(
                               assetPath: 'assets/google.png',

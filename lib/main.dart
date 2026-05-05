@@ -30,8 +30,10 @@ class MyApp extends StatelessWidget {
         '/pln': (context) => const PlnScreen(),
         '/pulsa': (context) => const PulsaScreen(),
         '/setor-sampah': (context) => const SetorSampahScreen(),
+        '/sig-in':(context) => const SignInScreen(),
+        '/sign-up':(context) => const SignUpScreen(),
       },
-      home: const DashboardScreen(),
+      home: const SignInScreen(),
     );
   }
 }

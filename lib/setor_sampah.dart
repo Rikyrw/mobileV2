@@ -343,8 +343,7 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
                                     secondary: IconButton(
                                       icon: const Icon(Icons.delete_outline, color: Color(0xFFBF360C)),
                                       onPressed: () {
-                                        _wasteItems.remove(item);
-                                        _updateShowAjukanButton();
+                                        _confirmRemoveWaste(item);
                                       },
                                     ),
                               ),
@@ -393,7 +392,7 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
                                       ),
                                       GestureDetector(
                                         onTap: () {
-                                          setState(() => _images.remove(img));
+                                          _confirmRemoveImage(img);
                                         },
                                         child: Container(
                                           decoration: BoxDecoration(
@@ -686,6 +685,61 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Gagal mengambil gambar: $e')));
     }
+  }
+
+  void _confirmRemoveImage(XFile img) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Hapus foto?'),
+          content: const Text('Foto akan dihapus. Lanjutkan?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Batal'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF315A39)),
+              onPressed: () {
+                setState(() => _images.remove(img));
+                Navigator.of(context).pop();
+              },
+              child: const Text('Hapus'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _confirmRemoveWaste(WasteItem item) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Hapus jenis sampah?'),
+          content: Text('Hapus "${item.name}" dari daftar?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Batal'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF315A39)),
+              onPressed: () {
+                setState(() {
+                  _wasteItems.remove(item);
+                });
+                _updateShowAjukanButton();
+                Navigator.of(context).pop();
+              },
+              child: const Text('Hapus'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
 }
