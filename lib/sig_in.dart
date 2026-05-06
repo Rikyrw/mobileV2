@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'sign_up.dart';
 
 class SignInScreen extends StatefulWidget {
   const SignInScreen({super.key});
@@ -109,19 +110,12 @@ class _SignInScreenState extends State<SignInScreen> {
                               },
                               padding: const EdgeInsets.all(12),
                               splashRadius: 20,
-                              icon: Image.asset(
-                                'assets/group1.png',
-                                width: 24,
-                                height: 24,
-                                errorBuilder: (context, error, stackTrace) {
-                                  return Icon(
-                                    _obscurePassword
-                                        ? Icons.visibility_off_outlined
-                                        : Icons.visibility_outlined,
-                                    size: 24,
-                                    color: const Color(0xFF333333),
-                                  );
-                                },
+                              icon: Icon(
+                                _obscurePassword
+                                    ? Icons.visibility_off_outlined
+                                    : Icons.visibility_outlined,
+                                size: 24,
+                                color: const Color(0xFF333333),
                               ),
                             ),
                           ),
@@ -164,17 +158,26 @@ class _SignInScreenState extends State<SignInScreen> {
                         ),
                       ),
                       const SizedBox(height: 30),
-                      const Align(
+                      Align(
                         alignment: Alignment.centerRight,
                         child: Padding(
-                          padding: EdgeInsets.all(8),
-                          child: Text(
-                            'New Here? Sign Up',
-                            style: TextStyle(
-                              color: Color(0xFF666666),
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                              fontFamily: 'Roboto',
+                          padding: const EdgeInsets.all(8),
+                          child: InkWell(
+                            onTap: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (context) => const SignUpScreen(),
+                                ),
+                              );
+                            },
+                            child: const Text(
+                              'New Here? Sign Up',
+                              style: TextStyle(
+                                color: Color(0xFF666666),
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                fontFamily: 'Roboto',
+                              ),
                             ),
                           ),
                         ),
@@ -199,17 +202,15 @@ class _SignInScreenState extends State<SignInScreen> {
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            // _buildSocialButton(
-                            //   assetPath: 'assets/fb.png',
-                            //   label: 'Facebook',
-                            //   fallbackIcon: Icons.facebook,
-                            // ),
-                            const SizedBox(width: 20),
-                            _buildSocialButton(
-                              assetPath: 'assets/google.png',
+                            _buildGoogleButton(
                               label: 'Google',
-                              fallbackIcon: Icons.public,
                             ),
+                            const SizedBox(width: 10),
+                            // _buildSocialButton(
+                            //   assetPath: 'assets/google.png',
+                            //   label: 'Google',
+                            //   fallbackIcon: Icons.public,
+                            // ),
                           ],
                         ),
                       ),
@@ -265,6 +266,47 @@ class _SignInScreenState extends State<SignInScreen> {
                 color: const Color(0xFF333333),
               );
             },
+          ),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: const TextStyle(
+              color: Color(0xFF333333),
+              fontSize: 14,
+              fontFamily: 'Roboto',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGoogleButton({
+    required String label,
+  }) {
+    return Container(
+      width: 150,
+      height: 55,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color.fromARGB(255, 0, 0, 0)),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          CircleAvatar(
+            radius: 12,
+            backgroundColor: Colors.white,
+            child: Text(
+              'G',
+              style: TextStyle(
+                color: const Color(0xFF4285F4),
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                fontFamily: 'Roboto',
+              ),
+            ),
           ),
           const SizedBox(width: 8),
           Text(
