@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:mob_2/dashboard.dart';
 import 'package:mob_2/emoney.dart';
 import 'package:mob_2/pln.dart';
@@ -10,7 +11,12 @@ import 'package:mob_2/sig_in.dart';
 import 'package:mob_2/sign_up.dart';
 import 'package:mob_2/transaksi.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Supabase.initialize(
+    url: 'https://yugkzkxwddabkjzooswk.supabase.co',
+    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl1Z2t6a3h3ZGRhYmtqem9vc3drIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4NjY5NzcsImV4cCI6MjA5MjQ0Mjk3N30.R8QcsDWjeAxwvR55BB8eDp-hi3GACpCW0qikV_uFxFc',
+  );
   runApp(const MyApp());
 }
 
