@@ -42,6 +42,17 @@ class _SignUpScreenState extends State<SignUpScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      Row(
+                        children: [
+                          IconButton(
+                            onPressed: () {
+                              Navigator.of(context).pop();
+                            },
+                            icon: const Icon(Icons.arrow_back, color: Colors.black),
+                          ),
+                          const Spacer(),
+                        ],
+                      ),
                       const Center(
                         child: Text(
                           'GreenPoint',
@@ -55,7 +66,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                       ),
                       const SizedBox(height: 40),
                       const Text(
-                        'Sign Up',
+                        'Daftar Akun',
                         style: TextStyle(
                           color: Color(0xFF333333),
                           fontSize: 24,
@@ -75,7 +86,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                             fontFamily: 'Roboto',
                           ),
                           decoration: const InputDecoration(
-                            hintText: 'Full Name',
+                            hintText: 'Nama Lengkap',
                             hintStyle: TextStyle(
                               color: Color(0xFF2D2525),
                               fontSize: 14,
@@ -144,7 +155,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                             fontFamily: 'Roboto',
                           ),
                           decoration: const InputDecoration(
-                            hintText: 'Address',
+                            hintText: 'Alamat',
                             hintStyle: TextStyle(
                               color: Color(0xFF2D2525),
                               fontSize: 14,
@@ -167,7 +178,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                             fontFamily: 'Roboto',
                           ),
                           decoration: const InputDecoration(
-                            hintText: 'Phone Number',
+                            hintText: 'Nomor Telepon',
                             hintStyle: TextStyle(
                               color: Color(0xFF2D2525),
                               fontSize: 14,
@@ -302,7 +313,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                                   child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                                 )
                               : const Text(
-                                  'Sign Up',
+                                  'Daftar',
                                   style: TextStyle(
                                     fontSize: 14,
                                     fontWeight: FontWeight.w400,
@@ -324,7 +335,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                               );
                             },
                             child: const Text(
-                              'Already have account? Sign In',
+                              'Sudah punya akun? Masuk',
                               style: TextStyle(
                                 color: Color(0xFF666666),
                                 fontSize: 14,
@@ -338,7 +349,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                       const SizedBox(
                         width: double.infinity,
                         child: Text(
-                          'Or Register With',
+                          'Atau Daftar Dengan',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             color: Color(0xFF999999),

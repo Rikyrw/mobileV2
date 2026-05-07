@@ -259,6 +259,17 @@ class _SignInScreenState extends State<SignInScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      Row(
+                        children: [
+                          IconButton(
+                            onPressed: () {
+                              Navigator.of(context).pop();
+                            },
+                            icon: const Icon(Icons.arrow_back, color: Colors.black),
+                          ),
+                          const Spacer(),
+                        ],
+                      ),
                       const Center(
                         child: Text(
                           'GreenPoint',
@@ -272,7 +283,7 @@ class _SignInScreenState extends State<SignInScreen> {
                       ),
                       const SizedBox(height: 40),
                       const Text(
-                        'Sign In',
+                        'Masuk',
                         style: TextStyle(
                           color: Color(0xFF333333),
                           fontSize: 24,
@@ -355,7 +366,7 @@ class _SignInScreenState extends State<SignInScreen> {
                       const Align(
                         alignment: Alignment.centerRight,
                         child: Text(
-                          'Forgot Password?',
+                          'Lupa Password?',
                           style: TextStyle(
                             color: Colors.black,
                             fontSize: 14,
@@ -388,7 +399,7 @@ class _SignInScreenState extends State<SignInScreen> {
                                   ),
                                 )
                               : const Text(
-                                  'Sign In',
+                                  'Masuk',
                                   style: TextStyle(
                                     fontSize: 14,
                                     fontWeight: FontWeight.w400,
@@ -412,7 +423,7 @@ class _SignInScreenState extends State<SignInScreen> {
                               );
                             },
                             child: const Text(
-                              'New Here? Sign Up',
+                              'Belum Punya Akun? Daftar',
                               style: TextStyle(
                                 color: Color(0xFF666666),
                                 fontSize: 14,
@@ -427,7 +438,7 @@ class _SignInScreenState extends State<SignInScreen> {
                       const SizedBox(
                         width: double.infinity,
                         child: Text(
-                          'Or Login With',
+                          'Atau Masuk Dengan',
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             color: Color(0xFF999999),
