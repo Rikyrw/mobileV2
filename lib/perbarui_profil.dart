@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class PerbaruiProfilScreen extends StatefulWidget {
   final Map<String, dynamic>? userData;
@@ -115,14 +116,34 @@ class _PerbaruiProfilScreenState extends State<PerbaruiProfilScreen> {
     });
 
     try {
-      // Simulasi delay untuk update ke backend
-      await Future.delayed(const Duration(seconds: 2));
+      final nama = etNama.text.trim();
+      final username = etUsername.text.trim();
+      final email = etEmail.text.trim();
+      final alamat = etAlamat.text.trim();
+      final noHp = etNoHandphone.text.trim();
+      final oldEmail = widget.userData?['email'] ?? '';
 
-      _showSuccess('Profil berhasil diperbarui!');
+      // Update data di Supabase
+      final response = await Supabase.instance.client
+          .from('nasabah')
+          .update({
+            'nama_lengkap': nama,
+            'user_name': username,
+            'email': email,
+            'alamat': alamat,
+            'no_hp': noHp,
+          })
+          .eq('email', oldEmail)
+          .select();
 
-      // Kembali ke screen profil
-      if (mounted) {
-        Navigator.of(context).pop(true);
+      if (response.isNotEmpty) {
+        _showSuccess('Profil berhasil diperbarui!');
+        // Kembali ke screen profil dengan flag update
+        if (mounted) {
+          Navigator.of(context).pop(true);
+        }
+      } else {
+        _showError('Gagal memperbarui profil');
       }
     } catch (e) {
       _showError('Error: ${e.toString()}');

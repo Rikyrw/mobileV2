@@ -48,6 +48,7 @@ class _TransaksiScreenState extends State<TransaksiScreen> {
 
   String? _fetchedUserName;
   bool _loadingProfile = false;
+  String? _currentEmail;
 
   @override
   void initState() {
@@ -76,6 +77,7 @@ class _TransaksiScreenState extends State<TransaksiScreen> {
       // Prefer route argument, otherwise use auth currentUser
       final user = Supabase.instance.client.auth.currentUser;
       final email = emailArg ?? user?.email;
+      _currentEmail = email;
 
       if (email != null && email.isNotEmpty) {
         final res = await Supabase.instance.client
@@ -109,7 +111,7 @@ class _TransaksiScreenState extends State<TransaksiScreen> {
         isActive: false,
         fallbackIcon: Icons.home,
         onTap: () {
-          Navigator.of(context).pushReplacementNamed('/dashboard');
+          Navigator.of(context).pushReplacementNamed('/dashboard', arguments: {'email': _currentEmail});
         },
       ),
       const BottomNavigationItemConfig(
@@ -130,7 +132,7 @@ class _TransaksiScreenState extends State<TransaksiScreen> {
         isActive: false,
         fallbackIcon: Icons.history,
         onTap: () {
-          Navigator.of(context).pushReplacementNamed('/riwayat');
+          Navigator.of(context).pushReplacementNamed('/riwayat', arguments: {'email': _currentEmail});
         },
       ),
       BottomNavigationItemConfig(
@@ -139,7 +141,7 @@ class _TransaksiScreenState extends State<TransaksiScreen> {
         isActive: false,
         fallbackIcon: Icons.person,
         onTap: () {
-          Navigator.of(context).pushReplacementNamed('/profil');
+          Navigator.of(context).pushReplacementNamed('/profil', arguments: {'email': _currentEmail});
         },
       ),
     ];

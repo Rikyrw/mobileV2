@@ -32,6 +32,7 @@ class _EmoneyScreenState extends State<EmoneyScreen> {
 
   String? _fetchedUserName;
   bool _loadingProfile = false;
+  String? _currentEmail;
 
   @override
   void initState() {
@@ -60,6 +61,7 @@ class _EmoneyScreenState extends State<EmoneyScreen> {
       // Prefer route argument, otherwise use auth currentUser
       final user = Supabase.instance.client.auth.currentUser;
       final email = emailArg ?? user?.email;
+      _currentEmail = email;
 
       if (email != null && email.isNotEmpty) {
         final res = await Supabase.instance.client
@@ -109,7 +111,7 @@ class _EmoneyScreenState extends State<EmoneyScreen> {
                           onPressed: () {
                             Navigator.of(
                               context,
-                            ).pushReplacementNamed('/dashboard');
+                            ).pushReplacementNamed('/dashboard', arguments: {'email': _currentEmail});
                           },
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(),

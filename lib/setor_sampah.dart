@@ -27,6 +27,7 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
 
   String? _fetchedUserName;
   bool _loadingProfile = false;
+  String? _currentEmail;
 
   @override
   void initState() {
@@ -55,6 +56,7 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
       // Prefer route argument, otherwise use auth currentUser
       final user = Supabase.instance.client.auth.currentUser;
       final email = emailArg ?? user?.email;
+      _currentEmail = email;
 
       if (email != null && email.isNotEmpty) {
         final res = await Supabase.instance.client
@@ -102,7 +104,7 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
                               alignment: Alignment.centerLeft,
                               child: IconButton(
                                 onPressed: () {
-                                  Navigator.of(context).pushReplacementNamed('/profil');
+                                  Navigator.of(context).pushReplacementNamed('/profil', arguments: {'email': _currentEmail});
                                 },
                                 icon: const Icon(Icons.arrow_back),
                                 iconSize: 24,

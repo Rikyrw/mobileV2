@@ -9,6 +9,8 @@ import 'package:mob_2/riwayat.dart';
 import 'package:mob_2/setor_sampah.dart';
 import 'package:mob_2/sig_in.dart';
 import 'package:mob_2/sign_up.dart';
+import 'package:mob_2/splash_screen.dart';
+import 'package:mob_2/welcome_screen.dart';
 import 'package:mob_2/transaksi.dart';
 
 Future<void> main() async {
@@ -28,6 +30,7 @@ class MyApp extends StatelessWidget {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       routes: {
+        '/welcome': (context) => const WelcomeScreen(),
         '/dashboard': (context) => const DashboardScreen(),
         '/profil': (context) => const ProfilScreen(),
         '/transaksi': (context) => const TransaksiScreen(),
@@ -39,7 +42,7 @@ class MyApp extends StatelessWidget {
         '/sig-in':(context) => const SignInScreen(),
         '/sign-up':(context) => const SignUpScreen(),
       },
-      home: const SignInScreen(),
+      home: const SplashScreen(),
     );
   }
 }

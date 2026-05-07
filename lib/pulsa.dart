@@ -32,6 +32,7 @@ class _PulsaScreenState extends State<PulsaScreen> {
 
   String? _fetchedUserName;
   bool _loadingProfile = false;
+  String? _currentEmail;
 
   @override
   void initState() {
@@ -60,6 +61,7 @@ class _PulsaScreenState extends State<PulsaScreen> {
       // Prefer route argument, otherwise use auth currentUser
       final user = Supabase.instance.client.auth.currentUser;
       final email = emailArg ?? user?.email;
+      _currentEmail = email;
 
       if (email != null && email.isNotEmpty) {
         final res = await Supabase.instance.client
@@ -112,7 +114,7 @@ class _PulsaScreenState extends State<PulsaScreen> {
                             color: Colors.white,
                           ),
                           onPressed: () {
-                            Navigator.of(context).pushReplacementNamed('/dashboard');
+                            Navigator.of(context).pushReplacementNamed('/dashboard', arguments: {'email': _currentEmail});
                           },
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(),

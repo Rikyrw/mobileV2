@@ -1,10 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'dashboard.dart';
 import 'perbarui_profil.dart';
 
-class ProfilScreen extends StatelessWidget {
+class ProfilScreen extends StatefulWidget {
   const ProfilScreen({super.key});
+
+  @override
+  State<ProfilScreen> createState() => _ProfilScreenState();
+}
+
+class _ProfilScreenState extends State<ProfilScreen> {
 
   static const _dummyData = ProfilDummyData(
     greeting: 'Halo,',
@@ -20,6 +27,72 @@ class ProfilScreen extends StatelessWidget {
     phone: '081234567890',
   );
 
+  String? _fetchedUserName;
+  bool _loadingProfile = false;
+  String? _currentEmail;
+  String? _fetchedFullName;
+  String? _fetchedUsername;
+  String? _fetchedEmail;
+  String? _fetchedPhone;
+  String? _fetchedAddress;
+  String? _fetchedSaldo;
+
+  @override
+  void initState() {
+    super.initState();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_fetchedUserName == null && !_loadingProfile) {
+      _loadUserName();
+    }
+  }
+
+  Future<void> _loadUserName() async {
+    setState(() => _loadingProfile = true);
+
+    try {
+      // Try to get email from route arguments (if provided)
+      final args = ModalRoute.of(context)?.settings.arguments;
+      String? emailArg;
+      if (args is Map && args['email'] is String) {
+        emailArg = args['email'] as String;
+      }
+
+      // Prefer route argument, otherwise use auth currentUser
+      final user = Supabase.instance.client.auth.currentUser;
+      final email = emailArg ?? user?.email;
+      _currentEmail = email;
+
+      if (email != null && email.isNotEmpty) {
+        final res = await Supabase.instance.client
+            .from('nasabah')
+            .select('nama_lengkap,user_name,email,no_hp,alamat,saldo')
+            .eq('email', email)
+            .limit(1);
+
+        if (res.isNotEmpty) {
+          final record = res.first;
+          setState(() {
+            _fetchedUserName = (record['nama_lengkap'] as String?) ?? (record['user_name'] as String?);
+            _fetchedFullName = record['nama_lengkap'] as String?;
+            _fetchedUsername = record['user_name'] as String?;
+            _fetchedEmail = record['email'] as String?;
+            _fetchedPhone = record['no_hp'] as String?;
+            _fetchedAddress = record['alamat'] as String?;
+            _fetchedSaldo = record['saldo'] != null ? 'Rp ${record['saldo'].toString()}' : 'Rp 0';
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Load user name error: $e');
+    } finally {
+      if (mounted) setState(() => _loadingProfile = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final navItems = [
@@ -29,7 +102,7 @@ class ProfilScreen extends StatelessWidget {
         isActive: false,
         fallbackIcon: Icons.home,
         onTap: () {
-          Navigator.of(context).pushReplacementNamed('/dashboard');
+          Navigator.of(context).pushReplacementNamed('/dashboard', arguments: {'email': _currentEmail});
         },
       ),
       BottomNavigationItemConfig(
@@ -38,7 +111,7 @@ class ProfilScreen extends StatelessWidget {
         isActive: false,
         fallbackIcon: Icons.swap_horiz,
         onTap: () {
-          Navigator.of(context).pushReplacementNamed('/transaksi');
+          Navigator.of(context).pushReplacementNamed('/transaksi', arguments: {'email': _currentEmail});
         },
       ),
       const BottomNavigationItemConfig(
@@ -53,7 +126,7 @@ class ProfilScreen extends StatelessWidget {
         isActive: false,
         fallbackIcon: Icons.history,
         onTap: () {
-          Navigator.of(context).pushReplacementNamed('/riwayat');
+          Navigator.of(context).pushReplacementNamed('/riwayat', arguments: {'email': _currentEmail});
         },
       ),
       const BottomNavigationItemConfig(
@@ -106,7 +179,7 @@ class ProfilScreen extends StatelessWidget {
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  _dummyData.userName,
+                                  _fetchedUserName ?? _dummyData.userName,
                                   style: const TextStyle(
                                     color: Colors.white,
                                     fontSize: 24,
@@ -140,7 +213,7 @@ class ProfilScreen extends StatelessWidget {
                               );
 
                               if (shouldLogout == true) {
-                                Navigator.of(context).pushNamedAndRemoveUntil('/sig-in', (route) => false);
+                                Navigator.of(context).pushNamedAndRemoveUntil('/welcome', (route) => false);
                               }
                             },
                           ),
@@ -183,7 +256,7 @@ class ProfilScreen extends StatelessWidget {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  _dummyData.fullName,
+                                  _fetchedFullName ?? _dummyData.fullName,
                                   style: const TextStyle(
                                     color: Color(0xFF333333),
                                     fontSize: 18,
@@ -193,7 +266,7 @@ class ProfilScreen extends StatelessWidget {
                                 ),
                                 const SizedBox(height: 4),
                                 Text(
-                                  _dummyData.username,
+                                  _fetchedUsername ?? _dummyData.username,
                                   style: const TextStyle(
                                     color: Color(0xFF666666),
                                     fontSize: 14,
@@ -216,7 +289,7 @@ class ProfilScreen extends StatelessWidget {
                                       ),
                                     ),
                                     Text(
-                                      _dummyData.saldo,
+                                      _fetchedSaldo ?? _dummyData.saldo,
                                       style: const TextStyle(
                                         color: Color(0xFF315A39),
                                         fontSize: 16,
@@ -238,7 +311,7 @@ class ProfilScreen extends StatelessWidget {
                                 ),
                                 const SizedBox(height: 8),
                                 Text(
-                                  _dummyData.address,
+                                  _fetchedAddress ?? _dummyData.address,
                                   style: const TextStyle(
                                     color: Color(0xFF666666),
                                     fontSize: 12,
@@ -265,7 +338,7 @@ class ProfilScreen extends StatelessWidget {
                                     Expanded(
                                       flex: 3,
                                       child: Text(
-                                        _dummyData.email,
+                                        _fetchedEmail ?? _dummyData.email,
                                         textAlign: TextAlign.end,
                                         style: const TextStyle(
                                           color: Color(0xFF333333),
@@ -295,7 +368,7 @@ class ProfilScreen extends StatelessWidget {
                                     Expanded(
                                       flex: 3,
                                       child: Text(
-                                        _dummyData.phone,
+                                        _fetchedPhone ?? _dummyData.phone,
                                         textAlign: TextAlign.end,
                                         style: const TextStyle(
                                           color: Color(0xFF333333),
@@ -314,15 +387,19 @@ class ProfilScreen extends StatelessWidget {
                                       MaterialPageRoute(
                                         builder: (context) => PerbaruiProfilScreen(
                                           userData: {
-                                            'nama': _dummyData.fullName,
-                                            'username': _dummyData.username,
-                                            'email': _dummyData.email,
-                                            'alamat': _dummyData.address,
-                                            'phone': _dummyData.phone,
+                                            'nama': _fetchedFullName ?? _dummyData.fullName,
+                                            'username': _fetchedUsername ?? _dummyData.username,
+                                            'email': _fetchedEmail ?? _dummyData.email,
+                                            'alamat': _fetchedAddress ?? _dummyData.address,
+                                            'phone': _fetchedPhone ?? _dummyData.phone,
                                           },
                                         ),
                                       ),
-                                    );
+                                    ).then((result) {
+                                      if (result == true) {
+                                        _loadUserName();
+                                      }
+                                    });
                                   },
                                   child: Container(
                                     width: double.infinity,
@@ -351,7 +428,7 @@ class ProfilScreen extends StatelessWidget {
                                   onTap: () {
                                     Navigator.of(
                                       context,
-                                    ).pushReplacementNamed('/setor-sampah');
+                                    ).pushReplacementNamed('/setor-sampah', arguments: {'email': _currentEmail});
                                   },
                                   child: Container(
                                     width: double.infinity,

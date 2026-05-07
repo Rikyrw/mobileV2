@@ -26,6 +26,7 @@ class _RiwayatScreenState extends State<RiwayatScreen> {
 
   String? _fetchedUserName;
   bool _loadingProfile = false;
+  String? _currentEmail;
 
   @override
   void initState() {
@@ -54,6 +55,7 @@ class _RiwayatScreenState extends State<RiwayatScreen> {
       // Prefer route argument, otherwise use auth currentUser
       final user = Supabase.instance.client.auth.currentUser;
       final email = emailArg ?? user?.email;
+      _currentEmail = email;
 
       if (email != null && email.isNotEmpty) {
         final res = await Supabase.instance.client
@@ -85,7 +87,7 @@ class _RiwayatScreenState extends State<RiwayatScreen> {
         isActive: false,
         fallbackIcon: Icons.home,
         onTap: () {
-          Navigator.of(context).pushReplacementNamed('/dashboard');
+          Navigator.of(context).pushReplacementNamed('/dashboard', arguments: {'email': _currentEmail});
         },
       ),
       BottomNavigationItemConfig(
@@ -94,7 +96,7 @@ class _RiwayatScreenState extends State<RiwayatScreen> {
         isActive: false,
         fallbackIcon: Icons.swap_horiz,
         onTap: () {
-          Navigator.of(context).pushReplacementNamed('/transaksi');
+          Navigator.of(context).pushReplacementNamed('/transaksi', arguments: {'email': _currentEmail});
         },
       ),
       const BottomNavigationItemConfig(
@@ -115,7 +117,7 @@ class _RiwayatScreenState extends State<RiwayatScreen> {
         isActive: false,
         fallbackIcon: Icons.person,
         onTap: () {
-          Navigator.of(context).pushReplacementNamed('/profil');
+          Navigator.of(context).pushReplacementNamed('/profil', arguments: {'email': _currentEmail});
         },
       ),
     ];

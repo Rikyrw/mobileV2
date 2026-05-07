@@ -21,6 +21,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   String? _fetchedUserName;
   bool _loadingProfile = false;
+  String? _currentEmail;
 
   @override
   void initState() {
@@ -49,6 +50,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       // Prefer route argument, otherwise use auth currentUser
       final user = Supabase.instance.client.auth.currentUser;
       final email = emailArg ?? user?.email;
+      _currentEmail = email;
 
       if (email != null && email.isNotEmpty) {
         final res = await Supabase.instance.client
@@ -86,7 +88,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         isActive: false,
         fallbackIcon: Icons.swap_horiz,
         onTap: () {
-          Navigator.of(context).pushReplacementNamed('/transaksi');
+          Navigator.of(context).pushReplacementNamed('/transaksi', arguments: {'email': _currentEmail});
         },
       ),
       const BottomNavigationItemConfig(
@@ -101,7 +103,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         isActive: false,
         fallbackIcon: Icons.history,
         onTap: () {
-          Navigator.of(context).pushReplacementNamed('/riwayat');
+          Navigator.of(context).pushReplacementNamed('/riwayat', arguments: {'email': _currentEmail});
         },
       ),
       BottomNavigationItemConfig(
@@ -110,7 +112,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
         isActive: false,
         fallbackIcon: Icons.person,
         onTap: () {
-          Navigator.of(context).pushReplacementNamed('/profil');
+          Navigator.of(context).pushReplacementNamed('/profil', arguments: {'email': _currentEmail});
         },
       ),
     ];
@@ -200,7 +202,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 Expanded(
                                   child: GestureDetector(
                                     onTap: () {
-                                      Navigator.of(context).pushReplacementNamed('/setor-sampah');
+                                    Navigator.of(context).pushReplacementNamed('/setor-sampah', arguments: {'email': _currentEmail});
                                     },
                                     child: Container(
                                       padding: const EdgeInsets.all(20),
@@ -322,7 +324,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 children: [
                                   GestureDetector(
                                     onTap: () {
-                                      Navigator.of(context).pushReplacementNamed('/emoney');
+                                      Navigator.of(context).pushReplacementNamed('/emoney', arguments: {'email': _currentEmail});
                                     },
                                     child: _serviceCard(
                                       label: 'E-Money',
@@ -333,7 +335,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                   ),
                                   GestureDetector(
                                     onTap: () {
-                                      Navigator.of(context).pushReplacementNamed('/pln');
+                                      Navigator.of(context).pushReplacementNamed('/pln', arguments: {'email': _currentEmail});
                                     },
                                     child: _serviceCard(
                                       label: 'PLN',
@@ -346,7 +348,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               const SizedBox(height: 8),
                               GestureDetector(
                                 onTap: () {
-                                  Navigator.of(context).pushReplacementNamed('/pulsa');
+                                  Navigator.of(context).pushReplacementNamed('/pulsa', arguments: {'email': _currentEmail});
                                 },
                                 child: _serviceCard(
                                   label: 'Pulsa',
