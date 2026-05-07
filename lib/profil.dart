@@ -85,30 +85,64 @@ class ProfilScreen extends StatelessWidget {
                         30,
                       ),
                       decoration: const BoxDecoration(color: Color(0xFF315A39)),
-                      child: Column(
+                      child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Opacity(
-                            opacity: 0.8,
-                            child: Text(
-                              _dummyData.greeting,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 16,
-                                fontFamily: 'Roboto',
-                                fontWeight: FontWeight.w400,
-                              ),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Opacity(
+                                  opacity: 0.8,
+                                  child: Text(
+                                    _dummyData.greeting,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 16,
+                                      fontFamily: 'Roboto',
+                                      fontWeight: FontWeight.w400,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  _dummyData.userName,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 24,
+                                    fontFamily: 'Roboto',
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                          const SizedBox(height: 4),
-                          Text(
-                            _dummyData.userName,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 24,
-                              fontFamily: 'Roboto',
-                              fontWeight: FontWeight.w700,
-                            ),
+                          IconButton(
+                            icon: const Icon(Icons.logout, color: Colors.white),
+                            tooltip: 'Keluar',
+                            onPressed: () async {
+                              final shouldLogout = await showDialog<bool>(
+                                context: context,
+                                builder: (context) => AlertDialog(
+                                  title: const Text('Konfirmasi'),
+                                  content: const Text('Apakah Anda yakin ingin keluar?'),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () => Navigator.of(context).pop(false),
+                                      child: const Text('Batal'),
+                                    ),
+                                    TextButton(
+                                      onPressed: () => Navigator.of(context).pop(true),
+                                      child: const Text('Keluar'),
+                                    ),
+                                  ],
+                                ),
+                              );
+
+                              if (shouldLogout == true) {
+                                Navigator.of(context).pushNamedAndRemoveUntil('/sig-in', (route) => false);
+                              }
+                            },
                           ),
                         ],
                       ),

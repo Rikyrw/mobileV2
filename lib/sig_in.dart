@@ -142,7 +142,7 @@ class _SignInScreenState extends State<SignInScreen> {
         final storedPassword = record['password'] as String?;
         if (storedPassword != null && BCrypt.checkpw(password, storedPassword)) {
           if (!mounted) return;
-          Navigator.of(context).pushReplacementNamed('/dashboard');
+          Navigator.of(context).pushReplacementNamed('/dashboard', arguments: {'email': record['email']});
           return;
         } else {
           if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Login failed: invalid credentials')));

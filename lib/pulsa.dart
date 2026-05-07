@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'dashboard.dart';
 
 class PulsaScreen extends StatefulWidget {
   const PulsaScreen({super.key});
@@ -26,6 +29,58 @@ class _PulsaScreenState extends State<PulsaScreen> {
     nominalPlaceholder: 'Pilih Nominal Pulsa',
     beliPulsaButtonText: 'Beli Pulsa',
   );
+
+  String? _fetchedUserName;
+  bool _loadingProfile = false;
+
+  @override
+  void initState() {
+    super.initState();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_fetchedUserName == null && !_loadingProfile) {
+      _loadUserName();
+    }
+  }
+
+  Future<void> _loadUserName() async {
+    setState(() => _loadingProfile = true);
+
+    try {
+      // Try to get email from route arguments (if provided)
+      final args = ModalRoute.of(context)?.settings.arguments;
+      String? emailArg;
+      if (args is Map && args['email'] is String) {
+        emailArg = args['email'] as String;
+      }
+
+      // Prefer route argument, otherwise use auth currentUser
+      final user = Supabase.instance.client.auth.currentUser;
+      final email = emailArg ?? user?.email;
+
+      if (email != null && email.isNotEmpty) {
+        final res = await Supabase.instance.client
+            .from('nasabah')
+            .select('nama_lengkap,user_name,email')
+            .eq('email', email)
+            .limit(1);
+
+        if (res.isNotEmpty) {
+          final record = res.first;
+          setState(() {
+            _fetchedUserName = (record['nama_lengkap'] as String?) ?? (record['user_name'] as String?);
+          });
+        }
+      }
+    } catch (e) {
+      debugPrint('Load user name error: $e');
+    } finally {
+      if (mounted) setState(() => _loadingProfile = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -81,7 +136,7 @@ class _PulsaScreenState extends State<PulsaScreen> {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                _dummyData.userName,
+                                _fetchedUserName ?? _dummyData.userName,
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 24,
