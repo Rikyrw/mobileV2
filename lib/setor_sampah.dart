@@ -35,6 +35,7 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
   void initState() {
     super.initState();
     _loadWasteTypes();
+    //a
   }
 
   @override
