@@ -28,10 +28,13 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
   String? _fetchedUserName;
   bool _loadingProfile = false;
   String? _currentEmail;
+  List<Map<String, dynamic>> _wasteTypes = [];
+  bool _loadingWasteTypes = false;
 
   @override
   void initState() {
     super.initState();
+    _loadWasteTypes();
   }
 
   @override
@@ -76,6 +79,30 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
       debugPrint('Load user name error: $e');
     } finally {
       if (mounted) setState(() => _loadingProfile = false);
+    }
+  }
+
+  Future<void> _loadWasteTypes() async {
+    setState(() => _loadingWasteTypes = true);
+
+    try {
+      final res = await Supabase.instance.client
+          .from('jenis_sampah')
+          .select('nama_jenis, harga_per_kg');
+
+      setState(() {
+        _wasteTypes = res.map((e) => {
+          'name': e['nama_jenis'] as String,
+          'price': (e['harga_per_kg'] as num).toDouble()
+        }).toList();
+      });
+    } catch (e) {
+      debugPrint('Error loading waste types: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Gagal memuat jenis sampah')),
+      );
+    } finally {
+      if (mounted) setState(() => _loadingWasteTypes = false);
     }
   }
 
@@ -337,7 +364,7 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
                                         Text(
-                                          _formatRupiah(item.price) + ' / kg',
+                                          _formatRupiah(item.price.round()) + ' / kg',
                                           style: const TextStyle(
                                             color: Color(0xFF666666),
                                             fontSize: 14,
@@ -600,15 +627,15 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
   }
 
   int _computeTotal() {
-    int total = 0;
+    double total = 0.0;
     for (var w in _wasteItems) {
       if (w.selected) {
         final raw = w.weightController.text.replaceAll(',', '.');
         final weight = double.tryParse(raw) ?? 0.0;
-        total += (w.price * weight).round();
+        total += w.price * weight;
       }
     }
-    return total;
+    return total.round();
   }
 
   String _formatRupiah(int value) {
@@ -619,43 +646,37 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
   }
 
   void _showAddWasteDialog() {
-    final presets = <Map<String, dynamic>>[
-      {'name': 'Plastik', 'price': 1000},
-      {'name': 'Kertas', 'price': 2000},
-      {'name': 'Kaca', 'price': 3000},
-      {'name': 'Logam', 'price': 5000},
-      {'name': 'Elektronik', 'price': 10000},
-    ];
-
     showModalBottomSheet(
       context: context,
       builder: (context) {
         return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const ListTile(
-                title: Text('Pilih Jenis Sampah'),
-              ),
-              ...presets.map((p) {
-                return ListTile(
-                  title: Text(p['name']),
-                  subtitle: Text(_formatRupiah(p['price'] as int)),
-                  onTap: () {
-                    Navigator.of(context).pop();
-                    _showWeightDialogForPreset(p['name'] as String, p['price'] as int);
-                  },
-                );
-              }).toList(),
-              const SizedBox.shrink(),
-            ],
-          ),
+          child: _loadingWasteTypes
+              ? const Center(child: CircularProgressIndicator())
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const ListTile(
+                      title: Text('Pilih Jenis Sampah'),
+                    ),
+                    ..._wasteTypes.map((p) {
+                      return ListTile(
+                        title: Text(p['name']),
+                        subtitle: Text(_formatRupiah((p['price'] as double).round())),
+                        onTap: () {
+                          Navigator.of(context).pop();
+                          _showWeightDialogForPreset(p['name'], p['price']);
+                        },
+                      );
+                    }).toList(),
+                    const SizedBox.shrink(),
+                  ],
+                ),
         );
       },
     );
   }
 
-  void _showWeightDialogForPreset(String name, int price) {
+  void _showWeightDialogForPreset(String name, double price) {
     final TextEditingController weightCtrl = TextEditingController();
     showDialog(
       context: context,
@@ -813,7 +834,7 @@ class SetorSampahDummyData {
 
 class WasteItem {
   String name;
-  int price; // in rupiah
+  double price; // in rupiah
   bool selected;
   final TextEditingController weightController;
 
