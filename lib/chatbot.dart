@@ -668,5 +668,6 @@ class ChatMessage {
     required this.text,
     required this.isBotMessage,
     required this.timestamp,
+    //a
   });
 }
