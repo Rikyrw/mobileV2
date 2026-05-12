@@ -114,11 +114,14 @@ class _ProfilScreenState extends State<ProfilScreen> {
           Navigator.of(context).pushReplacementNamed('/transaksi', arguments: {'email': _currentEmail});
         },
       ),
-      const BottomNavigationItemConfig(
+      BottomNavigationItemConfig(
         iconAsset: 'assets/chat_ai.png',
         label: 'Chat AI',
         isActive: false,
         fallbackIcon: Icons.smart_toy,
+        onTap: () {
+          Navigator.of(context).pushNamed('/chatbot');
+        },
       ),
       BottomNavigationItemConfig(
         iconAsset: 'assets/history.png',

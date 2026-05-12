@@ -120,11 +120,14 @@ class _TransaksiScreenState extends State<TransaksiScreen> {
         isActive: true,
         fallbackIcon: Icons.swap_horiz,
       ),
-      const BottomNavigationItemConfig(
+      BottomNavigationItemConfig(
         iconAsset: 'assets/chat_ai.png',
         label: 'Chat AI',
         isActive: false,
         fallbackIcon: Icons.smart_toy,
+        onTap: () {
+          Navigator.of(context).pushNamed('/chatbot');
+        },
       ),
       BottomNavigationItemConfig(
         iconAsset: 'assets/history.png',

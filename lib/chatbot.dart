@@ -1,5 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
-import 'package:mob_2/services/gemini_service.dart';
+import 'package:mob_2/services/groq_service.dart';
 
 class ChatbotScreen extends StatefulWidget {
   const ChatbotScreen({super.key});
@@ -21,13 +23,26 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     ),
   ];
 
+  final Map<String, String> _answerCache = {};
+
   bool _isLoading = false;
   bool _isCooldown = false;
-  static const Duration _sendCooldown = Duration(seconds: 2);
-  late GeminiService _geminiService;
+  bool _isAiLimited = false;
+
+  // Untuk Groq free/demo, indikator ini dibuat lokal agar user paham penggunaan AI.
+  // Angkanya bukan data real-time resmi dari server Groq.
+  static const int _localDailyRequestLimit = 1000;
+  static const Duration _sendCooldown = Duration(seconds: 5);
+  static const Duration _fallbackLimitDuration = Duration(seconds: 60);
+
+  int _aiRequestsToday = 0;
+  DateTime _usageDate = DateTime.now();
+  DateTime? _retryAfterAt;
+  Timer? _limitCountdownTimer;
+
+  late GroqService _groqService;
   late AnimationController _dotController;
 
-  // Simple elegant color tokens
   static const Color _primary = Color(0xFF2D5A3D);
   static const Color _primarySoft = Color(0xFFEAF3ED);
   static const Color _background = Color(0xFFF7F8F7);
@@ -39,32 +54,35 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   @override
   void initState() {
     super.initState();
+
     _dotController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1200),
     )..repeat();
 
-    _initializeGemini();
+    _initializeGroq();
   }
 
   @override
   void dispose() {
+    _limitCountdownTimer?.cancel();
     _dotController.dispose();
     _scrollController.dispose();
     _messageController.dispose();
     super.dispose();
   }
 
-  void _initializeGemini() {
+  void _initializeGroq() {
     try {
-      _geminiService = GeminiService();
+      _groqService = GroqService();
     } catch (e) {
-      debugPrint('Gemini initialization error: $e');
+      debugPrint('Groq initialization error: $e');
+
       if (mounted) {
         setState(() {
           _messages.add(ChatMessage(
             text:
-                'Maaf, terjadi kesalahan saat inisialisasi AI. Pastikan API key Gemini sudah diatur.',
+                'Maaf, terjadi kesalahan saat inisialisasi AI. Pastikan API key Groq sudah diatur.',
             isBotMessage: true,
             timestamp: DateTime.now(),
           ));
@@ -85,7 +103,6 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     });
   }
 
-
   String _normalizeText(String value) {
     return value
         .toLowerCase()
@@ -99,7 +116,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
     final List<Map<String, dynamic>> faqData = [
       {
-        'keywords': ['halo', 'hai', 'hello', 'hi'],
+        'keywords': ['halo', 'hai', 'hello', 'hi', 'pagi', 'siang', 'sore', 'malam'],
         'answer': 'Halo! Saya Si Jajang. Ada yang bisa saya bantu hari ini?',
       },
       {
@@ -110,12 +127,17 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       {
         'keywords': ['cara pakai', 'cara menggunakan', 'gunakan aplikasi', 'tutorial'],
         'answer':
-            'Cara pakainya mudah. Ketik pertanyaan atau kebutuhan kamu di kolom pesan, lalu Si Jajang akan membantu menjawab.',
+            'Untuk menggunakan aplikasi Green Point, pertama buka aplikasi lalu masuk ke akun kamu. Setelah itu, pilih menu layanan yang ingin digunakan, seperti setor sampah, cek poin, e-money, pembayaran PLN, isi pulsa, atau layanan lainnya. Ikuti instruksi yang muncul pada setiap menu, isi data yang diperlukan dengan benar, lalu tekan tombol konfirmasi atau lanjutkan. Jika proses berhasil, aplikasi akan menampilkan informasi atau status transaksi. Jika mengalami kendala, kamu bisa bertanya lagi ke Si Jajang atau menghubungi admin Green Point.',
       },
       {
         'keywords': ['fitur', 'menu', 'fungsi'],
         'answer':
             'Fitur utama aplikasi ini adalah chatbot AI, informasi layanan, dan bantuan pengguna secara cepat.',
+      },
+      {
+        'keywords': ['limit', 'kuota', 'quota', 'habis', 'ai sibuk'],
+        'answer':
+            'Kalau AI sedang limit, artinya batas penggunaan sementara sudah tercapai. Tunggu beberapa saat sampai indikator di kanan atas normal kembali.',
       },
       {
         'keywords': ['terima kasih', 'makasih', 'thanks', 'thank you'],
@@ -140,6 +162,54 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     return null;
   }
 
+  void _resetDailyUsageIfNeeded() {
+    final now = DateTime.now();
+    final isDifferentDay = now.year != _usageDate.year ||
+        now.month != _usageDate.month ||
+        now.day != _usageDate.day;
+
+    if (isDifferentDay) {
+      _usageDate = now;
+      _aiRequestsToday = 0;
+      _isAiLimited = false;
+      _retryAfterAt = null;
+    }
+  }
+
+  int _getLimitWaitSeconds() {
+    if (_retryAfterAt == null) return 0;
+
+    final seconds = _retryAfterAt!.difference(DateTime.now()).inSeconds;
+    return seconds > 0 ? seconds : 0;
+  }
+
+  bool _shouldBlockAiRequest() {
+    _resetDailyUsageIfNeeded();
+
+    if (_isAiLimited) {
+      final waitSeconds = _getLimitWaitSeconds();
+
+      if (waitSeconds > 0) return true;
+
+      _isAiLimited = false;
+      _retryAfterAt = null;
+    }
+
+    return _aiRequestsToday >= _localDailyRequestLimit;
+  }
+
+  void _markAiRequestUsed() {
+    _resetDailyUsageIfNeeded();
+
+    setState(() {
+      _aiRequestsToday++;
+
+      if (_aiRequestsToday >= _localDailyRequestLimit) {
+        _isAiLimited = true;
+      }
+    });
+  }
+
   void _startSendCooldown() {
     setState(() {
       _isCooldown = true;
@@ -154,11 +224,85 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     });
   }
 
+  void _activateAiLimitFromError(Object error) {
+    int retrySeconds = _fallbackLimitDuration.inSeconds;
+
+    if (error is GroqApiException && error.retryAfterSeconds != null) {
+      retrySeconds = error.retryAfterSeconds!;
+    } else {
+      final errorText = error.toString();
+
+      final retryMatches = [
+        RegExp(r'try again in ([0-9.]+)s', caseSensitive: false),
+        RegExp(r'retry in ([0-9.]+)s', caseSensitive: false),
+        RegExp(r'Please try again in ([0-9.]+)s', caseSensitive: false),
+      ];
+
+      for (final regex in retryMatches) {
+        final match = regex.firstMatch(errorText);
+        if (match != null) {
+          final value = double.tryParse(match.group(1) ?? '');
+          if (value != null) {
+            retrySeconds = value.ceil();
+            break;
+          }
+        }
+      }
+    }
+
+    setState(() {
+      _isAiLimited = true;
+      _retryAfterAt = DateTime.now().add(Duration(seconds: retrySeconds));
+    });
+
+    _limitCountdownTimer?.cancel();
+    _limitCountdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+
+      final waitSeconds = _getLimitWaitSeconds();
+
+      if (waitSeconds <= 0) {
+        timer.cancel();
+
+        setState(() {
+          _isAiLimited = false;
+          _retryAfterAt = null;
+        });
+      } else {
+        setState(() {});
+      }
+    });
+  }
+
+  String _getLimitMessage() {
+    final waitSeconds = _getLimitWaitSeconds();
+
+    if (waitSeconds > 0) {
+      return 'Maaf, AI Si Jajang sedang mencapai batas penggunaan sementara. Coba lagi sekitar $waitSeconds detik lagi ya.';
+    }
+
+    return 'Maaf, penggunaan AI hari ini sedang penuh. Coba lagi nanti atau gunakan pertanyaan umum yang bisa dijawab otomatis.';
+  }
+
   Future<void> _sendMessage() async {
     final message = _messageController.text.trim();
 
-    // Mencegah pesan kosong, spam klik, dan request bertumpuk.
     if (message.isEmpty || _isLoading || _isCooldown) return;
+
+    if (message.length > 300) {
+      setState(() {
+        _messages.add(ChatMessage(
+          text: 'Pertanyaan terlalu panjang. Coba ringkas maksimal 300 karakter ya.',
+          isBotMessage: true,
+          timestamp: DateTime.now(),
+        ));
+      });
+      _scrollToBottom();
+      return;
+    }
 
     setState(() {
       _messages.add(ChatMessage(
@@ -173,11 +317,10 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     _startSendCooldown();
     _scrollToBottom();
 
-    // Cek FAQ lokal dulu. Kalau cocok, tidak perlu request ke Gemini.
     final localAnswer = _getLocalFaqAnswer(message);
 
     if (localAnswer != null) {
-      await Future.delayed(const Duration(milliseconds: 500));
+      await Future.delayed(const Duration(milliseconds: 450));
 
       if (mounted) {
         setState(() {
@@ -194,10 +337,50 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       return;
     }
 
+    final normalizedMessage = _normalizeText(message);
+
+    if (_answerCache.containsKey(normalizedMessage)) {
+      await Future.delayed(const Duration(milliseconds: 350));
+
+      if (mounted) {
+        setState(() {
+          _messages.add(ChatMessage(
+            text: _answerCache[normalizedMessage]!,
+            isBotMessage: true,
+            timestamp: DateTime.now(),
+          ));
+          _isLoading = false;
+        });
+        _scrollToBottom();
+      }
+
+      return;
+    }
+
+    if (_shouldBlockAiRequest()) {
+      await Future.delayed(const Duration(milliseconds: 350));
+
+      if (mounted) {
+        setState(() {
+          _messages.add(ChatMessage(
+            text: _getLimitMessage(),
+            isBotMessage: true,
+            timestamp: DateTime.now(),
+          ));
+          _isLoading = false;
+        });
+        _scrollToBottom();
+      }
+
+      return;
+    }
+
     try {
-      final botResponse = await _geminiService
-          .sendMessage(message)
-          .timeout(const Duration(seconds: 25));
+      _markAiRequestUsed();
+
+      final botResponse = await _groqService.sendMessage(message);
+
+      _answerCache[normalizedMessage] = botResponse;
 
       if (mounted) {
         setState(() {
@@ -211,13 +394,21 @@ class _ChatbotScreenState extends State<ChatbotScreen>
         _scrollToBottom();
       }
     } catch (e) {
-      debugPrint('Error sending message: $e');
+      debugPrint('Error sending message with Groq: $e');
+
+      final isRateLimitError =
+          e is GroqApiException ? e.isRateLimit : e.toString().contains('429');
+
+      if (isRateLimitError) {
+        _activateAiLimitFromError(e);
+      }
 
       if (mounted) {
         setState(() {
           _messages.add(ChatMessage(
-            text:
-                'Maaf, Si Jajang sedang sibuk atau koneksi bermasalah. Coba lagi sebentar ya.',
+            text: isRateLimitError
+                ? _getLimitMessage()
+                : 'Maaf, Si Jajang sedang sibuk atau koneksi bermasalah. Coba lagi sebentar ya.',
             isBotMessage: true,
             timestamp: DateTime.now(),
           ));
@@ -270,7 +461,6 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                   onTap: () => Navigator.of(context).pop(),
                 ),
                 const SizedBox(width: 12),
-
                 Container(
                   width: 42,
                   height: 42,
@@ -286,7 +476,6 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                   ),
                 ),
                 const SizedBox(width: 12),
-
                 const Expanded(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -309,7 +498,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                           _OnlineDot(),
                           SizedBox(width: 6),
                           Text(
-                            'Online',
+                            'Groq AI',
                             style: TextStyle(
                               color: _textMuted,
                               fontSize: 12,
@@ -321,8 +510,12 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                     ],
                   ),
                 ),
-
-                // Tombol titik tiga sengaja dihapus.
+                _LimitBadge(
+                  used: _aiRequestsToday,
+                  max: _localDailyRequestLimit,
+                  isLimited: _isAiLimited,
+                  waitSeconds: _getLimitWaitSeconds(),
+                ),
               ],
             ),
           ),
@@ -338,8 +531,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       itemCount: _messages.length,
       itemBuilder: (context, index) {
         final msg = _messages[index];
-        final isFirst = index == 0 ||
-            _messages[index - 1].isBotMessage != msg.isBotMessage;
+        final isFirst =
+            index == 0 || _messages[index - 1].isBotMessage != msg.isBotMessage;
 
         return _MessageBubble(
           message: msg,
@@ -445,7 +638,9 @@ class _ChatbotScreenState extends State<ChatbotScreen>
               width: 48,
               height: 48,
               decoration: BoxDecoration(
-                color: (_isLoading || _isCooldown) ? _primary.withOpacity(0.45) : _primary,
+                color: (_isLoading || _isCooldown)
+                    ? _primary.withOpacity(0.45)
+                    : _primary,
                 borderRadius: BorderRadius.circular(18),
               ),
               child: const Icon(
@@ -462,6 +657,53 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 }
 
 // ─── Sub-widgets ──────────────────────────────────────────────────────────────
+
+class _LimitBadge extends StatelessWidget {
+  const _LimitBadge({
+    required this.used,
+    required this.max,
+    required this.isLimited,
+    required this.waitSeconds,
+  });
+
+  final int used;
+  final int max;
+  final bool isLimited;
+  final int waitSeconds;
+
+  static const Color _primary = Color(0xFF2D5A3D);
+  static const Color _primarySoft = Color(0xFFEAF3ED);
+  static const Color _dangerSoft = Color(0xFFFFF0E8);
+  static const Color _danger = Color(0xFFB94A20);
+  static const Color _border = Color(0xFFE4E8E4);
+
+  @override
+  Widget build(BuildContext context) {
+    final safeUsed = used.clamp(0, max);
+    final text =
+        isLimited && waitSeconds > 0 ? 'Limit ${waitSeconds}s' : 'AI $safeUsed/$max';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: isLimited ? _dangerSoft : _primarySoft,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: isLimited ? _danger.withOpacity(0.25) : _border,
+        ),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: isLimited ? _danger : _primary,
+          fontSize: 11,
+          fontWeight: FontWeight.w700,
+          letterSpacing: -0.1,
+        ),
+      ),
+    );
+  }
+}
 
 class _HeaderButton extends StatelessWidget {
   const _HeaderButton({
@@ -667,7 +909,5 @@ class ChatMessage {
   ChatMessage({
     required this.text,
     required this.isBotMessage,
-    required this.timestamp,
-    //a
-  });
+    required this.timestamp,  });
 }
