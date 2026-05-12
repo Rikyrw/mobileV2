@@ -33,6 +33,7 @@ class _RiwayatScreenState extends State<RiwayatScreen> {
   DateTime? _fromDate;
   DateTime? _toDate;
   bool _hasSearched = false;
+  bool _hasLoadedRiwayat = false;
 
   @override
   void initState() {
@@ -44,6 +45,9 @@ class _RiwayatScreenState extends State<RiwayatScreen> {
     super.didChangeDependencies();
     if (_fetchedUserName == null && !_loadingProfile) {
       _loadUserName();
+    }
+    if (_nasabahId != null && !_loadingRiwayat && !_hasLoadedRiwayat) {
+      _loadRiwayat(_nasabahId!, pendingOnly: true);
     }
   }
 
@@ -77,6 +81,9 @@ class _RiwayatScreenState extends State<RiwayatScreen> {
             _fetchedUserName = (record['nama_lengkap'] as String?) ?? (record['user_name'] as String?);
             _nasabahId = nasabahId;
           });
+          if (nasabahId != null && !_hasLoadedRiwayat) {
+            _loadRiwayat(nasabahId, pendingOnly: true);
+          }
         }
       }
     } catch (e) {
@@ -86,20 +93,25 @@ class _RiwayatScreenState extends State<RiwayatScreen> {
     }
   }
 
-  Future<void> _loadRiwayat(int nasabahId, DateTime from, DateTime to) async {
+  Future<void> _loadRiwayat(int nasabahId, {DateTime? from, DateTime? to, bool pendingOnly = false}) async {
     if (_loadingRiwayat) return;
     setState(() => _loadingRiwayat = true);
 
     try {
-      final fromDate = _formatDateQuery(from);
-      final toDate = _formatDateQuery(to);
-      final res = await Supabase.instance.client
+      final query = Supabase.instance.client
           .from('transaksi_setor')
           .select('id_transaksi_setor,total_nilai,tanggal_setor,status,detail_setor(berat_kg,harga_kg,subtotal,jenis_sampah(nama_jenis))')
-          .eq('id_nasabah', nasabahId)
-          .gte('tanggal_setor', fromDate)
-          .lte('tanggal_setor', toDate)
-          .order('tanggal_setor', ascending: false);
+          .eq('id_nasabah', nasabahId);
+
+      if (pendingOnly) {
+        query.eq('status', 'pending');
+      } else if (from != null && to != null) {
+        final fromDate = _formatDateQuery(from);
+        final toDate = _formatDateQuery(to);
+        query.gte('tanggal_setor', fromDate).lte('tanggal_setor', toDate);
+      }
+
+      final res = await query.order('tanggal_setor', ascending: false);
 
       setState(() {
         _riwayatItems = res.map((e) => {
@@ -113,6 +125,7 @@ class _RiwayatScreenState extends State<RiwayatScreen> {
             'subtotal': (d['subtotal'] as num?)?.toDouble() ?? 0.0,
           }).toList(),
         }).toList();
+        _hasLoadedRiwayat = true;
       });
     } catch (e) {
       debugPrint('Load riwayat error: $e');
@@ -197,6 +210,9 @@ class _RiwayatScreenState extends State<RiwayatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final visibleItems = _hasSearched
+        ? _riwayatItems
+        : _riwayatItems.where((item) => (item['status'] ?? '').toString().toLowerCase() == 'pending').toList();
     final navItems = [
       BottomNavigationItemConfig(
         iconAsset: 'assets/home11.png',
@@ -396,7 +412,7 @@ class _RiwayatScreenState extends State<RiwayatScreen> {
                                         return;
                                       }
                                       setState(() => _hasSearched = true);
-                                      _loadRiwayat(_nasabahId!, from, to);
+                                      _loadRiwayat(_nasabahId!, from: from, to: to);
                                     },
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: const Color(0xFF315A39),
@@ -433,12 +449,108 @@ class _RiwayatScreenState extends State<RiwayatScreen> {
                                 ),
                               ),
                             )
+                          else if (!_hasSearched && visibleItems.isNotEmpty)
+                            Column(
+                              children: visibleItems.map((item) {
+                                final details = item['details'] as List<dynamic>? ?? [];
+                                return Container(
+                                  margin: const EdgeInsets.only(bottom: 12),
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: const Color(0xFFE0E0E0)),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: Column(
+                                              crossAxisAlignment: CrossAxisAlignment.start,
+                                              children: [
+                                                Text(
+                                                  _formatDate(item['tanggal'] as String?),
+                                                  style: const TextStyle(
+                                                    color: Color(0xFF333333),
+                                                    fontSize: 14,
+                                                    fontFamily: 'Roboto',
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                                ),
+                                                const SizedBox(height: 6),
+                                                Text(
+                                                  'Total ${_formatRupiah((item['total'] as double).round())}',
+                                                  style: const TextStyle(
+                                                    color: Color(0xFF666666),
+                                                    fontSize: 12,
+                                                    fontFamily: 'Roboto',
+                                                    fontWeight: FontWeight.w400,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                          Text(
+                                            (item['status'] as String).toUpperCase(),
+                                            style: const TextStyle(
+                                              color: Color(0xFF315A39),
+                                              fontSize: 12,
+                                              fontFamily: 'Roboto',
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                      if (details.isNotEmpty) ...[
+                                        const SizedBox(height: 12),
+                                        Column(
+                                          children: details.map((d) {
+                                            final name = (d['nama'] ?? '-').toString();
+                                            final weight = d['berat'] as double? ?? 0.0;
+                                            final subtotal = d['subtotal'] as double? ?? 0.0;
+                                            return Padding(
+                                              padding: const EdgeInsets.only(bottom: 6),
+                                              child: Row(
+                                                children: [
+                                                  Expanded(
+                                                    child: Text(
+                                                      '$name - ${_formatWeight(weight)} kg',
+                                                      style: const TextStyle(
+                                                        color: Color(0xFF666666),
+                                                        fontSize: 12,
+                                                        fontFamily: 'Roboto',
+                                                        fontWeight: FontWeight.w400,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  Text(
+                                                    _formatRupiah(subtotal.round()),
+                                                    style: const TextStyle(
+                                                      color: Color(0xFF333333),
+                                                      fontSize: 12,
+                                                      fontFamily: 'Roboto',
+                                                      fontWeight: FontWeight.w700,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            );
+                                          }).toList(),
+                                        ),
+                                      ],
+                                    ],
+                                  ),
+                                );
+                              }).toList(),
+                            )
                           else if (!_hasSearched)
                             const Padding(
                               padding: EdgeInsets.all(32),
                               child: Center(
                                 child: Text(
-                                  'Pilih periode dan tekan Tampilkan untuk melihat riwayat.',
+                                  'Belum ada riwayat pending.',
                                   textAlign: TextAlign.center,
                                   style: TextStyle(
                                     color: Color(0xFF666666),
@@ -449,7 +561,7 @@ class _RiwayatScreenState extends State<RiwayatScreen> {
                                 ),
                               ),
                             )
-                          else if (_riwayatItems.isEmpty)
+                          else if (visibleItems.isEmpty)
                             const Padding(
                               padding: EdgeInsets.all(32),
                               child: Center(
@@ -467,7 +579,7 @@ class _RiwayatScreenState extends State<RiwayatScreen> {
                             )
                           else
                             Column(
-                              children: _riwayatItems.map((item) {
+                              children: visibleItems.map((item) {
                                 final details = item['details'] as List<dynamic>? ?? [];
                                 return Container(
                                   margin: const EdgeInsets.only(bottom: 12),
