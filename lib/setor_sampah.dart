@@ -1,5 +1,4 @@
 import 'dart:io';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -14,6 +13,7 @@ class SetorSampahScreen extends StatefulWidget {
 
 class _SetorSampahScreenState extends State<SetorSampahScreen> {
   static const int _maxPhotosPerItem = 3;
+  static const String _photoBucket = 'sampah';
   final TextEditingController _namaController = TextEditingController();
   final TextEditingController _alamatController = TextEditingController();
   bool _showAjukanButton = false;
@@ -31,6 +31,8 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
   String? _fetchedAddress;
   bool _loadingProfile = false;
   String? _currentEmail;
+  int? _nasabahId;
+  bool _submitting = false;
   List<Map<String, dynamic>> _wasteTypes = [];
   bool _loadingWasteTypes = false;
 
@@ -68,12 +70,13 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
       if (email != null && email.isNotEmpty) {
         final res = await Supabase.instance.client
             .from('nasabah')
-            .select('nama_lengkap,user_name,email,alamat')
+          .select('id_nasabah,nama_lengkap,user_name,email,alamat')
             .eq('email', email)
             .limit(1);
 
         if (res.isNotEmpty) {
           final record = res.first;
+          final nasabahId = record['id_nasabah'] as int?;
           final fullName = record['nama_lengkap'] as String?;
           final userName = record['user_name'] as String?;
           final address = record['alamat'] as String?;
@@ -81,6 +84,7 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
             _fetchedUserName = fullName ?? userName;
             _fetchedFullName = fullName;
             _fetchedAddress = address;
+            _nasabahId = nasabahId;
           });
           if (_namaController.text.trim().isEmpty) {
             final nameToUse = fullName ?? userName;
@@ -108,10 +112,11 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
     try {
       final res = await Supabase.instance.client
           .from('jenis_sampah')
-          .select('nama_jenis, harga_per_kg');
+          .select('id_jenis_sampah, nama_jenis, harga_per_kg');
 
       setState(() {
         _wasteTypes = res.map((e) => {
+          'id': e['id_jenis_sampah'] as int,
           'name': e['nama_jenis'] as String,
           'price': (e['harga_per_kg'] as num).toDouble()
         }).toList();
@@ -565,7 +570,7 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
                           width: double.infinity,
                           height: 48,
                           child: ElevatedButton(
-                            onPressed: () {},
+                            onPressed: _submitting ? null : _submitSetorSampah,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFF2E7D32),
                               elevation: 0,
@@ -573,15 +578,24 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
                                 borderRadius: BorderRadius.circular(0),
                               ),
                             ),
-                            child: const Text(
-                              'Ajukan Setor Sampah',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 16,
-                                fontFamily: 'Roboto',
-                                fontWeight: FontWeight.w400,
-                              ),
-                            ),
+                            child: _submitting
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                    ),
+                                  )
+                                : const Text(
+                                    'Ajukan Setor Sampah',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 16,
+                                      fontFamily: 'Roboto',
+                                      fontWeight: FontWeight.w400,
+                                    ),
+                                  ),
                           ),
                         ),
                     ],
@@ -636,11 +650,147 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
     return total.round();
   }
 
+  Future<void> _submitSetorSampah() async {
+    if (_submitting) return;
+    final nasabahId = _nasabahId;
+    if (nasabahId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Data nasabah belum tersedia.')),
+      );
+      return;
+    }
+
+    final selectedItems = _wasteItems.where((item) {
+      if (!item.selected) return false;
+      final raw = item.weightController.text.replaceAll(',', '.').trim();
+      final weight = double.tryParse(raw) ?? 0.0;
+      return weight >= 1;
+    }).toList();
+
+    if (selectedItems.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Pilih jenis sampah dan isi berat minimal 1 kg.')),
+      );
+      return;
+    }
+
+    final missingPhotos = selectedItems.where((item) => item.images.isEmpty).toList();
+    if (missingPhotos.isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Foto wajib diisi untuk setiap jenis sampah yang dipilih.')),
+      );
+      return;
+    }
+
+    final totalNilai = _computeTotal();
+    if (totalNilai <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Total harga belum valid.')),
+      );
+      return;
+    }
+
+    setState(() => _submitting = true);
+
+    try {
+      final tanggalSetor = DateTime.now().toIso8601String().split('T').first;
+      final transaksi = await Supabase.instance.client
+          .from('transaksi_setor')
+          .insert({
+            'id_nasabah': nasabahId,
+            'total_nilai': totalNilai,
+            'tanggal_setor': tanggalSetor,
+            'status': 'pending',
+          })
+          .select('id_transaksi_setor')
+          .single();
+
+      final transaksiId = transaksi['id_transaksi_setor'] as int;
+      final fotoUrls = await _uploadPhotos(nasabahId, selectedItems);
+      if (fotoUrls.isNotEmpty) {
+        final fotoRows = fotoUrls.map((url) => {
+          'id_transaksi_setor': transaksiId,
+          'foto_url': url,
+        }).toList();
+        await Supabase.instance.client.from('foto_setor').insert(fotoRows);
+      }
+
+      final detailRows = selectedItems.map((item) {
+        final raw = item.weightController.text.replaceAll(',', '.').trim();
+        final weight = double.tryParse(raw) ?? 0.0;
+        final subtotal = item.price * weight;
+        return {
+          'id_transaksi_setor': transaksiId,
+          'id_jenis': item.jenisId,
+          'berat_kg': weight,
+          'harga_kg': item.price,
+          'subtotal': subtotal,
+        };
+      }).toList();
+
+      await Supabase.instance.client.from('detail_setor').insert(detailRows);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Setor sampah berhasil diajukan.')),
+      );
+      final currentEmail = _currentEmail;
+      setState(() {
+        for (final item in _wasteItems) {
+          item.weightController.dispose();
+        }
+        _wasteItems.clear();
+        _showAjukanButton = false;
+      });
+      Navigator.of(context).pushReplacementNamed(
+        '/profil',
+        arguments: currentEmail == null ? null : {'email': currentEmail},
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Gagal mengajukan setor sampah: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _submitting = false);
+    }
+  }
+
   String _formatRupiah(int value) {
     if (value == 0) return 'Rp 0';
     final s = value.toString();
     final reg = RegExp(r"\B(?=(\d{3})+(?!\d))");
     return 'Rp ' + s.replaceAllMapped(reg, (m) => '.');
+  }
+
+  Future<List<String>> _uploadPhotos(int nasabahId, List<WasteItem> items) async {
+    final storage = Supabase.instance.client.storage.from(_photoBucket);
+    final urls = <String>[];
+    final stamp = DateTime.now().millisecondsSinceEpoch;
+
+    for (final item in items) {
+      for (var i = 0; i < item.images.length; i++) {
+        final image = item.images[i];
+        final bytes = await image.readAsBytes();
+        final ext = _getFileExtension(image.path);
+        final path = 'setor/$nasabahId/${stamp}_${item.jenisId}_$i.$ext';
+        await storage.uploadBinary(
+          path,
+          bytes,
+          fileOptions: FileOptions(contentType: image.mimeType ?? 'image/jpeg'),
+        );
+        final publicUrl = storage.getPublicUrl(path);
+        urls.add(publicUrl);
+      }
+    }
+
+    return urls;
+  }
+
+  String _getFileExtension(String path) {
+    final dot = path.lastIndexOf('.');
+    if (dot == -1 || dot == path.length - 1) return 'jpg';
+    return path.substring(dot + 1).toLowerCase();
   }
 
   void _showAddWasteDialog() {
@@ -665,7 +815,7 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
                           subtitle: Text(_formatRupiah((p['price'] as double).round())),
                           onTap: () {
                             Navigator.of(context).pop();
-                            _showWeightDialogForPreset(p['name'], p['price']);
+                            _showWeightDialogForPreset(p['id'], p['name'], p['price']);
                           },
                         );
                       }).toList(),
@@ -677,7 +827,7 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
     );
   }
 
-  void _showWeightDialogForPreset(String name, double price) {
+  void _showWeightDialogForPreset(int jenisId, String name, double price) {
     final TextEditingController weightCtrl = TextEditingController();
     showDialog(
       context: context,
@@ -702,7 +852,7 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
                 final w = double.tryParse(raw) ?? 0.0;
                 if (w >= 1) {
                   setState(() {
-                    final existing = _wasteItems.where((item) => item.name == name).toList();
+                    final existing = _wasteItems.where((item) => item.jenisId == jenisId).toList();
                     if (existing.isNotEmpty) {
                       final item = existing.first;
                       final currentRaw = item.weightController.text.replaceAll(',', '.').trim();
@@ -711,7 +861,7 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
                       item.weightController.text = newWeight.toString();
                       item.selected = true;
                     } else {
-                      final item = WasteItem(name: name, price: price, selected: true);
+                      final item = WasteItem(jenisId: jenisId, name: name, price: price, selected: true);
                       item.weightController.text = raw;
                       _wasteItems.add(item);
                     }
@@ -822,6 +972,7 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
               style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF315A39)),
               onPressed: () {
                 setState(() {
+                  item.weightController.dispose();
                   _wasteItems.remove(item);
                 });
                 _updateShowAjukanButton();
@@ -850,6 +1001,7 @@ class SetorSampahDummyData {
 }
 
 class WasteItem {
+  final int jenisId;
   String name;
   double price; // in rupiah
   bool selected;
@@ -857,6 +1009,7 @@ class WasteItem {
   final List<XFile> images;
 
   WasteItem({
+    required this.jenisId,
     required this.name,
     required this.price,
     this.selected = false,
