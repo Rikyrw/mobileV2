@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:mob_2/dashboard.dart';
 import 'package:mob_2/emoney.dart';
 import 'package:mob_2/pln.dart';
@@ -12,9 +13,11 @@ import 'package:mob_2/sign_up.dart';
 import 'package:mob_2/splash_screen.dart';
 import 'package:mob_2/welcome_screen.dart';
 import 'package:mob_2/transaksi.dart';
+import 'package:mob_2/chatbot.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await dotenv.load(fileName: ".env");
   await Supabase.initialize(
     url: 'https://yugkzkxwddabkjzooswk.supabase.co',
     anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl1Z2t6a3h3ZGRhYmtqem9vc3drIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4NjY5NzcsImV4cCI6MjA5MjQ0Mjk3N30.R8QcsDWjeAxwvR55BB8eDp-hi3GACpCW0qikV_uFxFc',
@@ -41,6 +44,7 @@ class MyApp extends StatelessWidget {
         '/setor-sampah': (context) => const SetorSampahScreen(),
         '/sig-in':(context) => const SignInScreen(),
         '/sign-up':(context) => const SignUpScreen(),
+        '/chatbot': (context) => const ChatbotScreen(),
       },
       home: const SplashScreen(),
     );
