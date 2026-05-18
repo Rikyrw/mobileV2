@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'services/firebase_account_service.dart';
@@ -23,10 +25,31 @@ class _DashboardScreenState extends State<DashboardScreen> {
   String? _fetchedUserName;
   bool _loadingProfile = false;
   String? _currentEmail;
+  int? _nasabahId;
+  bool _loadingDashboard = false;
+  String? _setorSampahCount;
+  String? _setorSampahGrowth;
+  String? _ppobCount;
+  String? _ppobGrowth;
+  DateTime _now = DateTime.now();
+  Timer? _clockTimer;
+
+  static const String _dashboardStatusFilter = 'success';
 
   @override
   void initState() {
     super.initState();
+    _now = DateTime.now();
+    _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() => _now = DateTime.now());
+    });
+  }
+
+  @override
+  void dispose() {
+    _clockTimer?.cancel();
+    super.dispose();
   }
 
   @override
@@ -57,17 +80,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
       if (email != null && email.isNotEmpty) {
         final res = await Supabase.instance.client
             .from('nasabah')
-            .select('nama_lengkap,user_name,email')
+            .select('id_nasabah,nama_lengkap,user_name,email')
             .eq('email', email)
             .limit(1);
 
         if (res.isNotEmpty) {
           final record = res.first;
+          final nasabahId = record['id_nasabah'] as int?;
           setState(() {
             _fetchedUserName =
                 (record['nama_lengkap'] as String?) ??
                 (record['user_name'] as String?);
+            _nasabahId = nasabahId;
           });
+          if (nasabahId != null) {
+            _loadDashboardStats(nasabahId);
+          }
           return;
         }
 
@@ -86,6 +114,134 @@ class _DashboardScreenState extends State<DashboardScreen> {
     } finally {
       if (mounted) setState(() => _loadingProfile = false);
     }
+  }
+
+  Future<void> _loadDashboardStats(int nasabahId) async {
+    if (_loadingDashboard) return;
+    setState(() => _loadingDashboard = true);
+
+    try {
+      final now = DateTime.now();
+      final currentStart = DateTime(now.year, now.month, 1);
+      final currentEnd = DateTime(now.year, now.month + 1, 0);
+      final prevStart = DateTime(now.year, now.month - 1, 1);
+      final prevEnd = DateTime(now.year, now.month, 0);
+
+      final setorCurrent = await _countSetorSampah(
+        nasabahId,
+        currentStart,
+        currentEnd,
+      );
+      final setorPrev = await _countSetorSampah(
+        nasabahId,
+        prevStart,
+        prevEnd,
+      );
+
+      final ppobCurrent = await _countPpob(
+        nasabahId,
+        currentStart,
+        currentEnd,
+      );
+      final ppobPrev = await _countPpob(nasabahId, prevStart, prevEnd);
+
+      if (!mounted) return;
+      setState(() {
+        _setorSampahCount = setorCurrent.toString();
+        _setorSampahGrowth = _formatGrowthPercent(setorCurrent, setorPrev);
+        _ppobCount = ppobCurrent.toString();
+        _ppobGrowth = _formatGrowthPercent(ppobCurrent, ppobPrev);
+      });
+    } catch (e) {
+      debugPrint('Load dashboard stats error: $e');
+    } finally {
+      if (mounted) setState(() => _loadingDashboard = false);
+    }
+  }
+
+  Future<int> _countSetorSampah(
+    int nasabahId,
+    DateTime from,
+    DateTime to,
+  ) async {
+    final fromDate = _formatDateQuery(from);
+    final toDate = _formatDateQuery(to);
+    final res = await Supabase.instance.client
+        .from('transaksi_setor')
+        .select('id_transaksi_setor')
+        .eq('id_nasabah', nasabahId)
+        .eq('status', _dashboardStatusFilter)
+        .gte('tanggal_setor', fromDate)
+        .lte('tanggal_setor', toDate);
+
+    return res.length;
+  }
+
+  Future<int> _countPpob(int nasabahId, DateTime from, DateTime to) async {
+    final fromDate = _formatDateQuery(from);
+    final toDate = _formatDateQuery(to);
+    final res = await Supabase.instance.client
+        .from('penarikan_saldo')
+        .select('id_penarikan')
+        .eq('id_nasabah', nasabahId)
+        .eq('status', _dashboardStatusFilter)
+        .gte('tanggal_pengajuan', fromDate)
+        .lte('tanggal_pengajuan', toDate);
+
+    return res.length;
+  }
+
+  String _formatDateQuery(DateTime date) {
+    final day = date.day.toString().padLeft(2, '0');
+    final month = date.month.toString().padLeft(2, '0');
+    final year = date.year.toString();
+    return '$year-$month-$day';
+  }
+
+  String _formatGrowthPercent(int current, int previous) {
+    if (previous == 0) {
+      return current == 0 ? '0% dari bulan lalu' : '+100% dari bulan lalu';
+    }
+
+    final diff = current - previous;
+    final percent = ((diff / previous) * 100).round();
+    final sign = percent >= 0 ? '+' : '';
+    return '$sign$percent% dari bulan lalu';
+  }
+
+  String _formatDayDateTime(DateTime date) {
+    const days = [
+      'Senin',
+      'Selasa',
+      'Rabu',
+      'Kamis',
+      'Jumat',
+      'Sabtu',
+      'Minggu',
+    ];
+    const months = [
+      'Januari',
+      'Februari',
+      'Maret',
+      'April',
+      'Mei',
+      'Juni',
+      'Juli',
+      'Agustus',
+      'September',
+      'Oktober',
+      'November',
+      'Desember',
+    ];
+
+    final dayName = days[date.weekday - 1];
+    final day = date.day.toString().padLeft(2, '0');
+    final month = months[date.month - 1];
+    final year = date.year.toString();
+    final hour = date.hour.toString().padLeft(2, '0');
+    final minute = date.minute.toString().padLeft(2, '0');
+    final second = date.second.toString().padLeft(2, '0');
+    return '$dayName, $day $month $year $hour:$minute:$second';
   }
 
   @override
@@ -190,6 +346,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               fontWeight: FontWeight.w700,
                             ),
                           ),
+                          SizedBox(height: 6),
+                          Opacity(
+                            opacity: 0.8,
+                            child: Text(
+                              _formatDayDateTime(_now),
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontFamily: 'Roboto',
+                                fontWeight: FontWeight.w400,
+                              ),
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -260,7 +429,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                           ),
                                           SizedBox(height: 16),
                                           Text(
-                                            _dummyData.setorSampahCount,
+                                            _setorSampahCount ??
+                                                _dummyData.setorSampahCount,
                                             style: TextStyle(
                                               color: Color(0xFF315A39),
                                               fontSize: 20,
@@ -270,7 +440,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                           ),
                                           SizedBox(height: 8),
                                           Text(
-                                            _dummyData.setorSampahGrowth,
+                                            _setorSampahGrowth ??
+                                                _dummyData.setorSampahGrowth,
                                             style: TextStyle(
                                               color: Color(0xFF4CAF50),
                                               fontSize: 12,
@@ -313,7 +484,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                         ),
                                         SizedBox(height: 16),
                                         Text(
-                                          _dummyData.ppobBalance,
+                                          _ppobCount ??
+                                              _dummyData.ppobBalance,
                                           style: TextStyle(
                                             color: Color(0xFF315A39),
                                             fontSize: 20,
@@ -323,7 +495,8 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                         ),
                                         SizedBox(height: 8),
                                         Text(
-                                          _dummyData.ppobGrowth,
+                                          _ppobGrowth ??
+                                              _dummyData.ppobGrowth,
                                           style: TextStyle(
                                             color: Color(0xFF4CAF50),
                                             fontSize: 12,
