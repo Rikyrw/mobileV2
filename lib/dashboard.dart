@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'services/firebase_account_service.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -48,8 +49,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
       }
 
       // Prefer route argument, otherwise use auth currentUser
+      final firebaseUser = FirebaseAccountService.currentUser;
       final user = Supabase.instance.client.auth.currentUser;
-      final email = emailArg ?? user?.email;
+      final email = emailArg ?? firebaseUser?.email ?? user?.email;
       _currentEmail = email;
 
       if (email != null && email.isNotEmpty) {
@@ -62,7 +64,20 @@ class _DashboardScreenState extends State<DashboardScreen> {
         if (res.isNotEmpty) {
           final record = res.first;
           setState(() {
-            _fetchedUserName = (record['nama_lengkap'] as String?) ?? (record['user_name'] as String?);
+            _fetchedUserName =
+                (record['nama_lengkap'] as String?) ??
+                (record['user_name'] as String?);
+          });
+          return;
+        }
+
+        final firebaseProfile =
+            await FirebaseAccountService.currentUserProfile();
+        if (firebaseProfile != null && firebaseProfile['email'] == email) {
+          setState(() {
+            _fetchedUserName =
+                (firebaseProfile['nama_lengkap'] as String?) ??
+                (firebaseProfile['user_name'] as String?);
           });
         }
       }
@@ -88,7 +103,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
         isActive: false,
         fallbackIcon: Icons.swap_horiz,
         onTap: () {
-          Navigator.of(context).pushReplacementNamed('/transaksi', arguments: {'email': _currentEmail});
+          Navigator.of(context).pushReplacementNamed(
+            '/transaksi',
+            arguments: {'email': _currentEmail},
+          );
         },
       ),
       BottomNavigationItemConfig(
@@ -106,7 +124,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
         isActive: false,
         fallbackIcon: Icons.history,
         onTap: () {
-          Navigator.of(context).pushReplacementNamed('/riwayat', arguments: {'email': _currentEmail});
+          Navigator.of(context).pushReplacementNamed(
+            '/riwayat',
+            arguments: {'email': _currentEmail},
+          );
         },
       ),
       BottomNavigationItemConfig(
@@ -115,7 +136,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
         isActive: false,
         fallbackIcon: Icons.person,
         onTap: () {
-          Navigator.of(context).pushReplacementNamed('/profil', arguments: {'email': _currentEmail});
+          Navigator.of(context).pushReplacementNamed(
+            '/profil',
+            arguments: {'email': _currentEmail},
+          );
         },
       ),
     ];
@@ -205,7 +229,12 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 Expanded(
                                   child: GestureDetector(
                                     onTap: () {
-                                    Navigator.of(context).pushReplacementNamed('/setor-sampah', arguments: {'email': _currentEmail});
+                                      Navigator.of(
+                                        context,
+                                      ).pushReplacementNamed(
+                                        '/setor-sampah',
+                                        arguments: {'email': _currentEmail},
+                                      );
                                     },
                                     child: Container(
                                       padding: const EdgeInsets.all(20),
@@ -327,18 +356,29 @@ class _DashboardScreenState extends State<DashboardScreen> {
                                 children: [
                                   GestureDetector(
                                     onTap: () {
-                                      Navigator.of(context).pushReplacementNamed('/emoney', arguments: {'email': _currentEmail});
+                                      Navigator.of(
+                                        context,
+                                      ).pushReplacementNamed(
+                                        '/emoney',
+                                        arguments: {'email': _currentEmail},
+                                      );
                                     },
                                     child: _serviceCard(
                                       label: 'E-Money',
                                       iconAsset: 'assets/wallet2.png',
-                                      fallbackIcon: Icons.account_balance_wallet,
+                                      fallbackIcon:
+                                          Icons.account_balance_wallet,
                                       rightMargin: 16,
                                     ),
                                   ),
                                   GestureDetector(
                                     onTap: () {
-                                      Navigator.of(context).pushReplacementNamed('/pln', arguments: {'email': _currentEmail});
+                                      Navigator.of(
+                                        context,
+                                      ).pushReplacementNamed(
+                                        '/pln',
+                                        arguments: {'email': _currentEmail},
+                                      );
                                     },
                                     child: _serviceCard(
                                       label: 'PLN',
@@ -351,7 +391,10 @@ class _DashboardScreenState extends State<DashboardScreen> {
                               const SizedBox(height: 8),
                               GestureDetector(
                                 onTap: () {
-                                  Navigator.of(context).pushReplacementNamed('/pulsa', arguments: {'email': _currentEmail});
+                                  Navigator.of(context).pushReplacementNamed(
+                                    '/pulsa',
+                                    arguments: {'email': _currentEmail},
+                                  );
                                 },
                                 child: _serviceCard(
                                   label: 'Pulsa',
@@ -527,18 +570,18 @@ class DashboardBottomNavigation extends StatelessWidget {
     // Get responsive screen dimensions
     final screenHeight = MediaQuery.sizeOf(context).height;
     final screenWidth = MediaQuery.sizeOf(context).width;
-    
+
     // Responsive height: 7-9% of screen height, with min 56 and max 80
     final navHeight = fixedHeight ?? (screenHeight * 0.08).clamp(56.0, 80.0);
-    
+
     // Responsive padding: larger padding on wider screens
-    final responsivePaddingHorizontal = screenWidth > 600 
-        ? paddingHorizontal + 8 
+    final responsivePaddingHorizontal = screenWidth > 600
+        ? paddingHorizontal + 8
         : paddingHorizontal;
-    
+
     // Responsive margin: add margin on tablets
-    final responsiveMarginHorizontal = screenWidth > 600 
-        ? marginHorizontal + 16 
+    final responsiveMarginHorizontal = screenWidth > 600
+        ? marginHorizontal + 16
         : marginHorizontal;
 
     final navBar = Container(
@@ -558,17 +601,16 @@ class DashboardBottomNavigation extends StatelessWidget {
       child: ClipRRect(
         borderRadius: borderRadius,
         child: Container(
-          padding: EdgeInsets.symmetric(horizontal: responsivePaddingHorizontal),
+          padding: EdgeInsets.symmetric(
+            horizontal: responsivePaddingHorizontal,
+          ),
           decoration: BoxDecoration(
             color: backgroundColor,
             // Optional: Add subtle gradient for premium look
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [
-                backgroundColor,
-                backgroundColor.withOpacity(0.95),
-              ],
+              colors: [backgroundColor, backgroundColor.withOpacity(0.95)],
             ),
           ),
           child: Row(
@@ -598,12 +640,7 @@ class DashboardBottomNavigation extends StatelessWidget {
           )
         : navBar;
 
-    return Positioned(
-      left: 0, 
-      right: 0, 
-      bottom: bottom, 
-      child: navChild,
-    );
+    return Positioned(left: 0, right: 0, bottom: bottom, child: navChild);
   }
 }
 
@@ -627,13 +664,13 @@ class _BottomNavItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.sizeOf(context).width;
     final isTablet = screenWidth > 600;
-    
+
     // Responsive icon size
     final iconSize = isTablet ? 28.0 : 24.0;
-    
+
     // Responsive font size
     final fontSize = isTablet ? 14.0 : 12.0;
-    
+
     // Active color - you can customize this
     final activeColor = const Color.fromARGB(255, 33, 90, 36);
     final inactiveColor = const Color.fromARGB(255, 187, 186, 186);

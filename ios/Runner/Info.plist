@@ -66,5 +66,22 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	
+	<!--
+	 If you enable Google Sign-In for iOS, add your reversed client id here.
+	 Replace REVERSED_CLIENT_ID with the reversed iOS client id from Google Cloud / OAuth credentials.
+	 Example entry (uncomment and set value):
+	 <key>CFBundleURLTypes</key>
+	 <array>
+	   <dict>
+	     <key>CFBundleTypeRole</key>
+	     <string>Editor</string>
+	     <key>CFBundleURLSchemes</key>
+	     <array>
+	       <string>REVERSED_CLIENT_ID</string>
+	     </array>
+	   </dict>
+	 </array>
+	-->
 </dict>
 </plist>

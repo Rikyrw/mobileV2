@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:mob_2/sig_in.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:bcrypt/bcrypt.dart';
-import 'package:flutter/foundation.dart';
+import 'package:mob_2/services/firebase_account_service.dart';
 
 class SignUpScreen extends StatefulWidget {
   const SignUpScreen({super.key});
@@ -20,8 +18,10 @@ class _SignUpScreenState extends State<SignUpScreen> {
   final TextEditingController _addressController = TextEditingController();
   final TextEditingController _phoneController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
-  final TextEditingController _confirmPasswordController = TextEditingController();
+  final TextEditingController _confirmPasswordController =
+      TextEditingController();
   bool _creating = false;
+  bool _googleLoading = false;
 
   @override
   Widget build(BuildContext context) {
@@ -48,7 +48,10 @@ class _SignUpScreenState extends State<SignUpScreen> {
                             onPressed: () {
                               Navigator.of(context).pop();
                             },
-                            icon: const Icon(Icons.arrow_back, color: Colors.black),
+                            icon: const Icon(
+                              Icons.arrow_back,
+                              color: Colors.black,
+                            ),
                           ),
                           const Spacer(),
                         ],
@@ -310,7 +313,10 @@ class _SignUpScreenState extends State<SignUpScreen> {
                               ? const SizedBox(
                                   width: 18,
                                   height: 18,
-                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
                                 )
                               : const Text(
                                   'Daftar',
@@ -361,20 +367,10 @@ class _SignUpScreenState extends State<SignUpScreen> {
                       const SizedBox(height: 20),
                       SizedBox(
                         width: double.infinity,
-                        height: 70,
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            _buildGoogleButton(
-                              label: 'Google',
-                            ),
-                            const SizedBox(width: 0),
-                            // _buildSocialButton(
-                            //   assetPath: 'assets/google.png',
-                            //   label: 'Google',
-                            //   fallbackIcon: Icons.public,
-                            // ),
-                          ],
+                        height: 55,
+                        child: _buildGoogleButton(
+                          label: 'Daftar dengan Google',
+                          onTap: _googleLoading ? null : _signUpWithGoogle,
                         ),
                       ),
                       const SizedBox(height: 40),
@@ -410,76 +406,104 @@ class _SignUpScreenState extends State<SignUpScreen> {
     final password = _passwordController.text;
     final confirm = _confirmPasswordController.text;
 
-    // Validation (match web logic)
-    if (fullName.isEmpty || userName.isEmpty || email.isEmpty || password.isEmpty || confirm.isEmpty || phone.isEmpty) {
+    if (fullName.isEmpty ||
+        userName.isEmpty ||
+        email.isEmpty ||
+        password.isEmpty ||
+        confirm.isEmpty ||
+        phone.isEmpty) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Silakan isi semua field yang wajib')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Silakan isi semua field yang wajib')),
+      );
       return;
     }
 
-    // Confirm password
     if (password != confirm) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Password dan konfirmasi tidak sama')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Password dan konfirmasi tidak sama')),
+      );
       return;
     }
 
-    // Password max length 8 (per web logic)
-    if (password.length > 8) {
+    if (password.length < 8) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Password maksimal 8 karakter')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Password minimal 8 karakter')),
+      );
       return;
     }
 
-    setState(() { _creating = true; });
+    setState(() {
+      _creating = true;
+    });
     try {
-      // Check if email or username already exists using OR (same as web)
-      final orQuery = 'email.eq.${Uri.encodeComponent(email)},user_name.eq.${Uri.encodeComponent(userName)}';
-      final existing = await Supabase.instance.client
-          .from('nasabah')
-          .select('id_nasabah')
-          .or(orQuery)
-          .limit(1);
+      final credential =
+          await FirebaseAccountService.createEmailPasswordAccount(
+            fullName: fullName,
+            userName: userName,
+            email: email,
+            password: password,
+            address: address,
+            phone: phone,
+          );
 
-      if (existing is List && existing.isNotEmpty) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Email atau username sudah terdaftar')));
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Pendaftaran berhasil')));
+      Navigator.of(context).pushReplacementNamed(
+        '/dashboard',
+        arguments: {'email': credential.user?.email},
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(FirebaseAccountService.messageForError(e))),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _creating = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _signUpWithGoogle() async {
+    setState(() {
+      _googleLoading = true;
+    });
+    try {
+      final credential = await FirebaseAccountService.signInWithGoogle();
+      if (credential == null) {
         return;
       }
 
-      final hashed = BCrypt.hashpw(password, BCrypt.gensalt());
-
-      final insertRes = await Supabase.instance.client.from('nasabah').insert({
-        'user_name': userName,
-        'nama_lengkap': fullName,
-        'email': email,
-        'no_hp': phone.isEmpty ? null : phone,
-        'status': 'aktif',
-        'saldo': 0,
-        'alamat': address,
-        'created_at': DateTime.now().toUtc().toIso8601String(),
-        'password': hashed,
-      }).select();
-
-      if (insertRes is List && insertRes.isNotEmpty) {
-        // Best-effort: try to create Supabase Auth user using anon key
-        try {
-          await Supabase.instance.client.auth.signUp(email: email, password: password);
-        } catch (_) {}
-
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Pendaftaran berhasil')));
-        if (mounted) Navigator.of(context).pop();
-      } else {
-        // Try to extract message from insertRes
-        String msg = 'Gagal mendaftar';
-        try {
-          msg = 'Gagal mendaftar: ${insertRes.toString()}';
-        } catch (_) {}
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
-      }
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Masuk dengan Google berhasil')),
+      );
+      Navigator.of(context).pushReplacementNamed(
+        '/dashboard',
+        arguments: {'email': credential.user?.email},
+      );
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Registration error: ${e.toString()}')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(FirebaseAccountService.messageForGoogleError(e)),
+          ),
+        );
+      }
     } finally {
-      if (mounted) setState(() { _creating = false; });
+      if (mounted) {
+        setState(() {
+          _googleLoading = false;
+        });
+      }
     }
   }
 
@@ -499,85 +523,51 @@ class _SignUpScreenState extends State<SignUpScreen> {
     );
   }
 
-  Widget _buildSocialButton({
-    required String assetPath,
-    required String label,
-    required IconData fallbackIcon,
-  }) {
-    return Container(
-      width: 150,
-      height: 55,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFDADADA)),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Image.asset(
-            assetPath,
-            width: 24,
-            height: 24,
-            errorBuilder: (context, error, stackTrace) {
-              return Icon(
-                fallbackIcon,
-                size: 24,
-                color: const Color(0xFF333333),
-              );
-            },
-          ),
-          const SizedBox(width: 8),
-          Text(
-            label,
-            style: const TextStyle(
-              color: Color(0xFF333333),
-              fontSize: 14,
-              fontFamily: 'Roboto',
+  Widget _buildGoogleButton({required String label, VoidCallback? onTap}) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        height: 55,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: const Color.fromARGB(255, 0, 0, 0)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Image.asset(
+              'assets/google.png',
+              width: 24,
+              height: 24,
+              errorBuilder: (context, error, stackTrace) {
+                return const Icon(
+                  Icons.account_circle,
+                  size: 24,
+                  color: Color(0xFF4285F4),
+                );
+              },
             ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildGoogleButton({
-    required String label,
-  }) {
-    return Container(
-      width: 150,
-      height: 55,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color.fromARGB(255, 0, 0, 0)),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          CircleAvatar(
-            radius: 12,
-            backgroundColor: Colors.white,
-            child: Text(
-              'G',
-              style: TextStyle(
-                color: const Color(0xFF4285F4),
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Color(0xFF333333),
+                fontSize: 14,
                 fontFamily: 'Roboto',
               ),
             ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            label,
-            style: const TextStyle(
-              color: Color(0xFF333333),
-              fontSize: 14,
-              fontFamily: 'Roboto',
-            ),
-          ),
-        ],
+            if (_googleLoading) ...[
+              const SizedBox(width: 8),
+              const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:bcrypt/bcrypt.dart';
+import 'services/firebase_account_service.dart';
 import 'sign_up.dart';
 
 class SignInScreen extends StatefulWidget {
@@ -15,8 +14,7 @@ class _SignInScreenState extends State<SignInScreen> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   bool _loading = false;
-  bool _creatingUser = false;
-  bool _fetchingUser = false;
+  bool _googleLoading = false;
 
   @override
   void dispose() {
@@ -25,55 +23,7 @@ class _SignInScreenState extends State<SignInScreen> {
     super.dispose();
   }
 
-  Future<void> _fetchUser() async {
-    final identifier = _emailController.text.trim();
-    if (identifier.isEmpty) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter username or email to fetch')),
-      );
-      return;
-    }
-
-    setState(() {
-      _fetchingUser = true;
-    });
-
-    try {
-        var res = await Supabase.instance.client
-          .from('nasabah')
-          .select('id_nasabah,user_name,email,password')
-          .eq('email', identifier)
-          .limit(1);
-
-      // If no result by email, try username
-      if (res is List && res.isEmpty) {
-        res = await Supabase.instance.client
-            .from('nasabah')
-            .select('id_nasabah,user_name,email,password')
-            .eq('user_name', identifier)
-            .limit(1);
-      }
-
-      if (res is List && res.isEmpty) {
-        debugPrint('Fetch user: not found');
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('User not found')));
-      } else {
-        final record = res is List ? (res as List).first : res;
-        debugPrint('Fetch user record: $record');
-        final storedPassword = record['password'] as String?;
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Found user. password hash starts with: ${storedPassword?.substring(0, storedPassword.length>20?20:storedPassword.length) ?? 'null'}')));
-      }
-    } catch (e) {
-      debugPrint('Fetch user exception: ${e.toString()}');
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Fetch exception: ${e.toString()}')));
-    } finally {
-      if (mounted) setState(() { _fetchingUser = false; });
-    }
-  }
-
   Future<void> _signIn() async {
-    debugPrint('SignIn button pressed');
     final identifier = _emailController.text.trim();
     final password = _passwordController.text;
     if (identifier.isEmpty || password.isEmpty) {
@@ -89,152 +39,26 @@ class _SignInScreenState extends State<SignInScreen> {
     });
 
     try {
-      // Try Supabase Auth only when identifier looks like an email
-      final isEmail = identifier.contains('@');
-      if (isEmail) {
-        try {
-          await Supabase.instance.client.auth.signInWithPassword(
-            email: identifier,
-            password: password,
-          );
-
-          if (mounted) {
-            final user = Supabase.instance.client.auth.currentUser;
-            if (user != null) {
-              Navigator.of(context).pushReplacementNamed('/dashboard');
-              return;
-            }
-          }
-        } catch (authErr) {
-          debugPrint('Auth sign-in error: $authErr');
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Auth failed; trying fallback to nasabah table')),
-            );
-          }
-        }
-      } else {
-        debugPrint('Identifier is not an email, skipping Supabase Auth and using nasabah fallback');
-      }
-
-      // Fallback: check nasabah table by email then username
-      // `identifier` may be email or username
-        var res = await Supabase.instance.client
-          .from('nasabah')
-          .select('id_nasabah,user_name,email,password')
-          .eq('email', identifier)
-          .limit(1);
-
-      // If not found by email, try username
-      if (res is List && res.isEmpty) {
-        res = await Supabase.instance.client
-            .from('nasabah')
-            .select('id_nasabah,user_name,email,password')
-            .eq('user_name', identifier)
-            .limit(1);
-      }
-
-      if (res is List && res.isEmpty) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('User not found')));
-      } else {
-        final record = res is List ? (res as List).first : res;
-        debugPrint('Fallback record: $record');
-        final storedPassword = record['password'] as String?;
-        if (storedPassword != null && BCrypt.checkpw(password, storedPassword)) {
-          if (!mounted) return;
-          Navigator.of(context).pushReplacementNamed('/dashboard', arguments: {'email': record['email']});
-          return;
-        } else {
-          if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Login failed: invalid credentials')));
-        }
-      }
-    } catch (e) {
-      debugPrint('SignIn unexpected error: $e');
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Login error: ${e.toString()}')));
-    } finally {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-        });
-      }
-    }
-  }
-
-  Future<void> _createTestUser() async {
-    final identifier = _emailController.text.trim();
-    final password = _passwordController.text;
-    if (identifier.isEmpty || password.isEmpty) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter username/email and password first')),
+      final credential = await FirebaseAccountService.signInWithEmailOrUsername(
+        identifier: identifier,
+        password: password,
       );
-      return;
-    }
 
-    setState(() {
-      _creatingUser = true;
-    });
-
-    try {
-      String userName;
-      String email;
-      if (identifier.contains('@')) {
-        email = identifier;
-        userName = identifier.split('@').first;
-      } else {
-        userName = identifier;
-        email = '$identifier@example.com';
-      }
-
-      final hashed = BCrypt.hashpw(password, BCrypt.gensalt());
-
-      // Check if username or email already exists to avoid unique constraint errors
-      final existingByUsername = await Supabase.instance.client
-          .from('nasabah')
-          .select('id_nasabah')
-          .eq('user_name', userName)
-          .limit(1);
-      if (existingByUsername is List && existingByUsername.isNotEmpty) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('User already exists (username)')));
-        return;
-      }
-
-      final existingByEmail = await Supabase.instance.client
-          .from('nasabah')
-          .select('id_nasabah')
-          .eq('email', email)
-          .limit(1);
-      if (existingByEmail is List && existingByEmail.isNotEmpty) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('User already exists (email)')));
-        return;
-      }
-
-      final insertRes = await Supabase.instance.client.from('nasabah').insert({
-        'user_name': userName,
-        'nama_lengkap': userName,
-        'email': email,
-        'no_hp': null,
-        'status': 'aktif',
-        'saldo': 0,
-        'alamat': '',
-        'password': hashed,
-      }).select();
-
-      if (insertRes is List && insertRes.isNotEmpty) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Test user created successfully')));
-      } else {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Create user: no rows returned')));
-      }
+      if (!mounted) return;
+      Navigator.of(context).pushReplacementNamed(
+        '/dashboard',
+        arguments: {'email': credential.user?.email},
+      );
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Create user exception: ${e.toString()}')),
+          SnackBar(content: Text(FirebaseAccountService.messageForError(e))),
         );
       }
     } finally {
       if (mounted) {
         setState(() {
-          _creatingUser = false;
+          _loading = false;
         });
       }
     }
@@ -249,9 +73,11 @@ class _SignInScreenState extends State<SignInScreen> {
           builder: (context, constraints) {
             return SingleChildScrollView(
               padding: const EdgeInsets.all(32),
-                child: ConstrainedBox(
+              child: ConstrainedBox(
                 constraints: BoxConstraints(
-                  minHeight: (constraints.maxHeight - 64) < 0 ? 0 : (constraints.maxHeight - 64),
+                  minHeight: (constraints.maxHeight - 64) < 0
+                      ? 0
+                      : (constraints.maxHeight - 64),
                 ),
                 child: Container(
                   width: double.infinity,
@@ -265,7 +91,10 @@ class _SignInScreenState extends State<SignInScreen> {
                             onPressed: () {
                               Navigator.of(context).pop();
                             },
-                            icon: const Icon(Icons.arrow_back, color: Colors.black),
+                            icon: const Icon(
+                              Icons.arrow_back,
+                              color: Colors.black,
+                            ),
                           ),
                           const Spacer(),
                         ],
@@ -450,20 +279,10 @@ class _SignInScreenState extends State<SignInScreen> {
                       const SizedBox(height: 20),
                       SizedBox(
                         width: double.infinity,
-                        height: 70,
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            _buildGoogleButton(
-                              label: 'Google',
-                            ),
-                            const SizedBox(width: 10),
-                            // _buildSocialButton(
-                            //   assetPath: 'assets/google.png',
-                            //   label: 'Google',
-                            //   fallbackIcon: Icons.public,
-                            // ),
-                          ],
+                        height: 55,
+                        child: _buildGoogleButton(
+                          label: 'Masuk dengan Google',
+                          onTap: _googleLoading ? null : _signInWithGoogle,
                         ),
                       ),
                       const SizedBox(height: 40),
@@ -491,86 +310,85 @@ class _SignInScreenState extends State<SignInScreen> {
     );
   }
 
-  Widget _buildSocialButton({
-    required String assetPath,
-    required String label,
-    required IconData fallbackIcon,
-  }) {
-    return Container(
-      width: 150,
-      height: 55,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFDADADA)),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Image.asset(
-            assetPath,
-            width: 24,
-            height: 24,
-            errorBuilder: (context, error, stackTrace) {
-              return Icon(
-                fallbackIcon,
-                size: 24,
-                color: const Color(0xFF333333),
-              );
-            },
-          ),
-          const SizedBox(width: 8),
-          Text(
-            label,
-            style: const TextStyle(
-              color: Color(0xFF333333),
-              fontSize: 14,
-              fontFamily: 'Roboto',
+  Widget _buildGoogleButton({required String label, VoidCallback? onTap}) {
+    return InkWell(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        height: 55,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: const Color.fromARGB(255, 0, 0, 0)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Image.asset(
+              'assets/google.png',
+              width: 24,
+              height: 24,
+              errorBuilder: (context, error, stackTrace) {
+                return const Icon(
+                  Icons.account_circle,
+                  size: 24,
+                  color: Color(0xFF4285F4),
+                );
+              },
             ),
-          ),
-        ],
+            const SizedBox(width: 8),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Color(0xFF333333),
+                fontSize: 14,
+                fontFamily: 'Roboto',
+              ),
+            ),
+            if (_googleLoading) ...[
+              const SizedBox(width: 8),
+              const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ],
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildGoogleButton({
-    required String label,
-  }) {
-    return Container(
-      width: 150,
-      height: 55,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color.fromARGB(255, 0, 0, 0)),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          CircleAvatar(
-            radius: 12,
-            backgroundColor: Colors.white,
-            child: Text(
-              'G',
-              style: TextStyle(
-                color: const Color(0xFF4285F4),
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-                fontFamily: 'Roboto',
-              ),
-            ),
+  Future<void> _signInWithGoogle() async {
+    setState(() {
+      _googleLoading = true;
+    });
+
+    try {
+      final credential = await FirebaseAccountService.signInWithGoogle();
+      if (credential == null) {
+        return;
+      }
+
+      if (!mounted) return;
+      Navigator.of(context).pushReplacementNamed(
+        '/dashboard',
+        arguments: {'email': credential.user?.email},
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(FirebaseAccountService.messageForGoogleError(e)),
           ),
-          const SizedBox(width: 8),
-          Text(
-            label,
-            style: const TextStyle(
-              color: Color(0xFF333333),
-              fontSize: 14,
-              fontFamily: 'Roboto',
-            ),
-          ),
-        ],
-      ),
-    );
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _googleLoading = false;
+        });
+      }
+    }
   }
 }

@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'dashboard.dart';
 import 'perbarui_profil.dart';
+import 'services/firebase_account_service.dart';
 
 class ProfilScreen extends StatefulWidget {
   const ProfilScreen({super.key});
@@ -12,7 +13,6 @@ class ProfilScreen extends StatefulWidget {
 }
 
 class _ProfilScreenState extends State<ProfilScreen> {
-
   static const _dummyData = ProfilDummyData(
     greeting: 'Halo,',
     userName: 'Haidar Rais',
@@ -62,8 +62,9 @@ class _ProfilScreenState extends State<ProfilScreen> {
       }
 
       // Prefer route argument, otherwise use auth currentUser
+      final firebaseUser = FirebaseAccountService.currentUser;
       final user = Supabase.instance.client.auth.currentUser;
-      final email = emailArg ?? user?.email;
+      final email = emailArg ?? firebaseUser?.email ?? user?.email;
       _currentEmail = email;
 
       if (email != null && email.isNotEmpty) {
@@ -76,13 +77,36 @@ class _ProfilScreenState extends State<ProfilScreen> {
         if (res.isNotEmpty) {
           final record = res.first;
           setState(() {
-            _fetchedUserName = (record['nama_lengkap'] as String?) ?? (record['user_name'] as String?);
+            _fetchedUserName =
+                (record['nama_lengkap'] as String?) ??
+                (record['user_name'] as String?);
             _fetchedFullName = record['nama_lengkap'] as String?;
             _fetchedUsername = record['user_name'] as String?;
             _fetchedEmail = record['email'] as String?;
             _fetchedPhone = record['no_hp'] as String?;
             _fetchedAddress = record['alamat'] as String?;
-            _fetchedSaldo = record['saldo'] != null ? 'Rp ${record['saldo'].toString()}' : 'Rp 0';
+            _fetchedSaldo = record['saldo'] != null
+                ? 'Rp ${record['saldo'].toString()}'
+                : 'Rp 0';
+          });
+          return;
+        }
+
+        final firebaseProfile =
+            await FirebaseAccountService.currentUserProfile();
+        if (firebaseProfile != null && firebaseProfile['email'] == email) {
+          setState(() {
+            _fetchedUserName =
+                (firebaseProfile['nama_lengkap'] as String?) ??
+                (firebaseProfile['user_name'] as String?);
+            _fetchedFullName = firebaseProfile['nama_lengkap'] as String?;
+            _fetchedUsername = firebaseProfile['user_name'] as String?;
+            _fetchedEmail = firebaseProfile['email'] as String?;
+            _fetchedPhone = firebaseProfile['no_hp'] as String?;
+            _fetchedAddress = firebaseProfile['alamat'] as String?;
+            _fetchedSaldo = firebaseProfile['saldo'] != null
+                ? 'Rp ${firebaseProfile['saldo'].toString()}'
+                : 'Rp 0';
           });
         }
       }
@@ -102,7 +126,10 @@ class _ProfilScreenState extends State<ProfilScreen> {
         isActive: false,
         fallbackIcon: Icons.home,
         onTap: () {
-          Navigator.of(context).pushReplacementNamed('/dashboard', arguments: {'email': _currentEmail});
+          Navigator.of(context).pushReplacementNamed(
+            '/dashboard',
+            arguments: {'email': _currentEmail},
+          );
         },
       ),
       BottomNavigationItemConfig(
@@ -111,7 +138,10 @@ class _ProfilScreenState extends State<ProfilScreen> {
         isActive: false,
         fallbackIcon: Icons.swap_horiz,
         onTap: () {
-          Navigator.of(context).pushReplacementNamed('/transaksi', arguments: {'email': _currentEmail});
+          Navigator.of(context).pushReplacementNamed(
+            '/transaksi',
+            arguments: {'email': _currentEmail},
+          );
         },
       ),
       BottomNavigationItemConfig(
@@ -129,7 +159,10 @@ class _ProfilScreenState extends State<ProfilScreen> {
         isActive: false,
         fallbackIcon: Icons.history,
         onTap: () {
-          Navigator.of(context).pushReplacementNamed('/riwayat', arguments: {'email': _currentEmail});
+          Navigator.of(context).pushReplacementNamed(
+            '/riwayat',
+            arguments: {'email': _currentEmail},
+          );
         },
       ),
       const BottomNavigationItemConfig(
@@ -197,18 +230,23 @@ class _ProfilScreenState extends State<ProfilScreen> {
                             icon: const Icon(Icons.logout, color: Colors.white),
                             tooltip: 'Keluar',
                             onPressed: () async {
+                              final navigator = Navigator.of(context);
                               final shouldLogout = await showDialog<bool>(
                                 context: context,
                                 builder: (context) => AlertDialog(
                                   title: const Text('Konfirmasi'),
-                                  content: const Text('Apakah Anda yakin ingin keluar?'),
+                                  content: const Text(
+                                    'Apakah Anda yakin ingin keluar?',
+                                  ),
                                   actions: [
                                     TextButton(
-                                      onPressed: () => Navigator.of(context).pop(false),
+                                      onPressed: () =>
+                                          Navigator.of(context).pop(false),
                                       child: const Text('Batal'),
                                     ),
                                     TextButton(
-                                      onPressed: () => Navigator.of(context).pop(true),
+                                      onPressed: () =>
+                                          Navigator.of(context).pop(true),
                                       child: const Text('Keluar'),
                                     ),
                                   ],
@@ -216,7 +254,12 @@ class _ProfilScreenState extends State<ProfilScreen> {
                               );
 
                               if (shouldLogout == true) {
-                                Navigator.of(context).pushNamedAndRemoveUntil('/welcome', (route) => false);
+                                await FirebaseAccountService.signOut();
+                                if (!mounted) return;
+                                navigator.pushNamedAndRemoveUntil(
+                                  '/welcome',
+                                  (route) => false,
+                                );
                               }
                             },
                           ),
@@ -386,23 +429,36 @@ class _ProfilScreenState extends State<ProfilScreen> {
                                 const SizedBox(height: 12),
                                 InkWell(
                                   onTap: () {
-                                    Navigator.of(context).push(
-                                      MaterialPageRoute(
-                                        builder: (context) => PerbaruiProfilScreen(
-                                          userData: {
-                                            'nama': _fetchedFullName ?? _dummyData.fullName,
-                                            'username': _fetchedUsername ?? _dummyData.username,
-                                            'email': _fetchedEmail ?? _dummyData.email,
-                                            'alamat': _fetchedAddress ?? _dummyData.address,
-                                            'phone': _fetchedPhone ?? _dummyData.phone,
-                                          },
-                                        ),
-                                      ),
-                                    ).then((result) {
-                                      if (result == true) {
-                                        _loadUserName();
-                                      }
-                                    });
+                                    Navigator.of(context)
+                                        .push(
+                                          MaterialPageRoute(
+                                            builder: (context) =>
+                                                PerbaruiProfilScreen(
+                                                  userData: {
+                                                    'nama':
+                                                        _fetchedFullName ??
+                                                        _dummyData.fullName,
+                                                    'username':
+                                                        _fetchedUsername ??
+                                                        _dummyData.username,
+                                                    'email':
+                                                        _fetchedEmail ??
+                                                        _dummyData.email,
+                                                    'alamat':
+                                                        _fetchedAddress ??
+                                                        _dummyData.address,
+                                                    'phone':
+                                                        _fetchedPhone ??
+                                                        _dummyData.phone,
+                                                  },
+                                                ),
+                                          ),
+                                        )
+                                        .then((result) {
+                                          if (result == true) {
+                                            _loadUserName();
+                                          }
+                                        });
                                   },
                                   child: Container(
                                     width: double.infinity,
@@ -429,9 +485,10 @@ class _ProfilScreenState extends State<ProfilScreen> {
                                 const SizedBox(height: 20),
                                 InkWell(
                                   onTap: () {
-                                    Navigator.of(
-                                      context,
-                                    ).pushReplacementNamed('/setor-sampah', arguments: {'email': _currentEmail});
+                                    Navigator.of(context).pushReplacementNamed(
+                                      '/setor-sampah',
+                                      arguments: {'email': _currentEmail},
+                                    );
                                   },
                                   child: Container(
                                     width: double.infinity,

@@ -14,11 +14,18 @@ void main() {
   testWidgets('Welcome screen renders expected widgets', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(const MyApp());
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
 
-    expect(find.text('Welcome'), findsOneWidget);
-    expect(find.text('Sign In'), findsOneWidget);
-    expect(find.text('Sign Up'), findsOneWidget);
+    await tester.pumpWidget(const MyApp());
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Selamat Datang'), findsOneWidget);
+    expect(find.text('Masuk'), findsOneWidget);
+    expect(find.text('Daftar'), findsOneWidget);
     expect(find.byType(ElevatedButton), findsNWidgets(2));
   });
 }
