@@ -15,6 +15,7 @@ class _SignInScreenState extends State<SignInScreen> {
   final TextEditingController _passwordController = TextEditingController();
   bool _loading = false;
   bool _googleLoading = false;
+  bool _resetLoading = false;
 
   @override
   void dispose() {
@@ -59,6 +60,48 @@ class _SignInScreenState extends State<SignInScreen> {
       if (mounted) {
         setState(() {
           _loading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _sendPasswordReset() async {
+    final identifier = _emailController.text.trim();
+
+    if (identifier.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Masukkan email atau username terlebih dahulu.'),
+        ),
+      );
+      return;
+    }
+
+    setState(() {
+      _resetLoading = true;
+    });
+
+    try {
+      await FirebaseAccountService.sendPasswordResetForIdentifier(identifier);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Jika akun ditemukan, link reset password sudah dikirim ke email Anda.',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(FirebaseAccountService.messageForError(e))),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _resetLoading = false;
         });
       }
     }
@@ -192,18 +235,35 @@ class _SignInScreenState extends State<SignInScreen> {
                           ),
                         ),
                       ),
-                      const Align(
+                      Align(
                         alignment: Alignment.centerRight,
-                        child: Text(
-                          'Lupa Password?',
-                          style: TextStyle(
-                            color: Colors.black,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                            fontFamily: 'Roboto',
+                        child: TextButton(
+                          onPressed: _resetLoading ? null : _sendPasswordReset,
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.black,
+                            padding: EdgeInsets.zero,
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          child: _resetLoading
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Text(
+                                  'Lupa Password?',
+                                  style: TextStyle(
+                                    color: Colors.black,
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                    fontFamily: 'Roboto',
+                                  ),
+                                ),
                           ),
                         ),
-                      ),
                       const SizedBox(height: 10),
                       SizedBox(
                         width: double.infinity,

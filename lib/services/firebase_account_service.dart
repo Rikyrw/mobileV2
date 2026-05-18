@@ -35,14 +35,32 @@ class FirebaseAccountService {
   }) async {
     _ensureFirebaseReady();
     final email = await _resolveEmail(identifier);
+    final mirroredRecord = await _findNasabahByIdentifier(identifier);
+    final storedPassword = _text(mirroredRecord?['password']);
 
     try {
-      return await _signInWithFirebasePassword(
+      final credential = await _signInWithFirebasePassword(
         email: email,
         password: password,
       );
+
+      final user = credential.user;
+      if (user != null &&
+          mirroredRecord != null &&
+          _isFirebasePendingPassword(storedPassword)) {
+        await _markNasabahPasswordManagedByFirebase(
+          email: email,
+          firebaseUid: user.uid,
+        );
+      }
+
+      return credential;
     } on FirebaseAuthException catch (error) {
       if (!_shouldTryLegacyNasabahFallback(error)) {
+        rethrow;
+      }
+
+      if (_isFirebaseBackedPassword(storedPassword)) {
         rethrow;
       }
 
@@ -99,6 +117,30 @@ class FirebaseAccountService {
     );
 
     return credential;
+  }
+
+  static Future<void> sendPasswordResetForIdentifier(String identifier) async {
+    _ensureFirebaseReady();
+
+    final email = await _resolveEmail(identifier);
+    final record = await _findNasabahByIdentifier(identifier);
+    final storedPassword = _text(record?['password']);
+
+    if (record != null && !_isGoogleOnlyNasabah(record)) {
+      await _ensureFirebasePasswordAccountForReset(
+        email: email,
+        record: record,
+        storedPassword: storedPassword,
+      );
+    }
+
+    await _auth.sendPasswordResetEmail(email: email);
+
+    if (record != null &&
+        !_isGoogleOnlyNasabah(record) &&
+        !_isFirebaseBackedPassword(storedPassword)) {
+      await _markNasabahPasswordPendingFirebase(email);
+    }
   }
 
   static Future<UserCredential?> signInWithGoogle() async {
@@ -230,6 +272,8 @@ class FirebaseAccountService {
           return error.message ?? 'Token Google tidak diterima.';
         case 'missing-firebase-config':
           return error.message ?? _firebaseConfigMessage;
+        case 'reset-email-sent':
+          return 'Link reset password sudah dikirim ke email Anda.';
         default:
           return error.message ?? 'Terjadi kesalahan autentikasi.';
       }
@@ -540,7 +584,7 @@ class FirebaseAccountService {
 
     if (storedPassword == null ||
         email == null ||
-        storedPassword.startsWith('firebase-auth:') ||
+        _isFirebaseBackedPassword(storedPassword) ||
         !_looksLikeBcryptHash(storedPassword) ||
         !BCrypt.checkpw(password, storedPassword)) {
       return null;
@@ -676,6 +720,88 @@ class FirebaseAccountService {
     } catch (e) {
       debugPrint('Supabase password marker update skipped: $e');
     }
+  }
+
+  static Future<void> _markNasabahPasswordPendingFirebase(String email) async {
+    try {
+      await Supabase.instance.client
+          .from('nasabah')
+          .update({'password': 'firebase-auth-pending'})
+          .eq('email', email);
+    } catch (e) {
+      debugPrint('Supabase pending Firebase marker update skipped: $e');
+    }
+  }
+
+  static Future<void> _ensureFirebasePasswordAccountForReset({
+    required String email,
+    required Map<String, dynamic> record,
+    required String? storedPassword,
+  }) async {
+    if (_isFirebaseBackedPassword(storedPassword)) {
+      return;
+    }
+
+    final generatedPassword = _generateTemporaryPassword();
+    final fullName = _text(record['nama_lengkap']);
+    final userName = _text(record['user_name']);
+    final address = _text(record['alamat']);
+    final phone = _text(record['no_hp']);
+    final photoUrl = _text(record['photo_url']);
+    final googleId = _text(record['google_id']);
+    final balance = record['saldo'] as num?;
+
+    try {
+      final credential = await _auth.createUserWithEmailAndPassword(
+        email: email,
+        password: generatedPassword,
+      );
+
+      final user = credential.user;
+      if (user == null) {
+        return;
+      }
+
+      if (fullName != null) {
+        await user.updateDisplayName(fullName);
+      }
+
+      await _upsertUserProfile(
+        user: user,
+        provider: 'password',
+        fullName: fullName,
+        userName: userName,
+        address: address,
+        phone: phone,
+        photoUrl: photoUrl,
+        googleId: googleId,
+        balance: balance,
+      );
+    } on FirebaseAuthException catch (error) {
+      if (error.code != 'email-already-in-use') {
+        rethrow;
+      }
+    }
+  }
+
+  static bool _isFirebaseBackedPassword(String? value) {
+    return value != null &&
+        (value.startsWith('firebase-auth:') || value == 'firebase-auth-pending');
+  }
+
+  static bool _isFirebasePendingPassword(String? value) {
+    return value == 'firebase-auth-pending';
+  }
+
+  static bool _isGoogleOnlyNasabah(Map<String, dynamic> record) {
+    final googleId = _text(record['google_id']);
+    final storedPassword = _text(record['password']);
+
+    return googleId != null && storedPassword == null;
+  }
+
+  static String _generateTemporaryPassword() {
+    return 'Gp-${DateTime.now().microsecondsSinceEpoch}-Temp!';
   }
 
   static bool _looksLikeBcryptHash(String value) {
