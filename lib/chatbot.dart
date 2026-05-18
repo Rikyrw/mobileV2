@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:mob_2/services/chatbot_knowledge_base.dart';
 import 'package:mob_2/services/groq_service.dart';
 
 class ChatbotScreen extends StatefulWidget {
@@ -24,6 +25,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   ];
 
   final Map<String, String> _answerCache = {};
+  final ChatbotKnowledgeBase _knowledgeBase = const ChatbotKnowledgeBase();
 
   bool _isLoading = false;
   bool _isCooldown = false;
@@ -80,12 +82,14 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
       if (mounted) {
         setState(() {
-          _messages.add(ChatMessage(
-            text:
-                'Maaf, terjadi kesalahan saat inisialisasi AI. Pastikan API key Groq sudah diatur.',
-            isBotMessage: true,
-            timestamp: DateTime.now(),
-          ));
+          _messages.add(
+            ChatMessage(
+              text:
+                  'Maaf, terjadi kesalahan saat inisialisasi AI. Pastikan API key Groq sudah diatur.',
+              isBotMessage: true,
+              timestamp: DateTime.now(),
+            ),
+          );
         });
       }
     }
@@ -104,67 +108,46 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   }
 
   String _normalizeText(String value) {
-    return value
-        .toLowerCase()
-        .replaceAll(RegExp(r'[^a-z0-9\s]'), ' ')
-        .replaceAll(RegExp(r'\s+'), ' ')
-        .trim();
+    return ChatbotKnowledgeBase.normalizeText(value);
   }
 
   String? _getLocalFaqAnswer(String question) {
-    final q = _normalizeText(question);
+    return _knowledgeBase.answerFor(question);
+  }
 
-    final List<Map<String, dynamic>> faqData = [
-      {
-        'keywords': ['halo', 'hai', 'hello', 'hi', 'pagi', 'siang', 'sore', 'malam'],
-        'answer': 'Halo! Saya Si Jajang. Ada yang bisa saya bantu hari ini?',
-      },
-      {
-        'keywords': ['green point', 'greenpoint', 'aplikasi ini', 'tentang aplikasi'],
-        'answer':
-            'Green Point adalah aplikasi yang membantu pengguna mendapatkan informasi dan layanan dengan lebih praktis.',
-      },
-      {
-        'keywords': ['cara pakai', 'cara menggunakan', 'gunakan aplikasi', 'tutorial'],
-        'answer':
-            'Untuk menggunakan aplikasi Green Point, pertama buka aplikasi lalu masuk ke akun kamu. Setelah itu, pilih menu layanan yang ingin digunakan, seperti setor sampah, cek poin, e-money, pembayaran PLN, isi pulsa, atau layanan lainnya. Ikuti instruksi yang muncul pada setiap menu, isi data yang diperlukan dengan benar, lalu tekan tombol konfirmasi atau lanjutkan. Jika proses berhasil, aplikasi akan menampilkan informasi atau status transaksi. Jika mengalami kendala, kamu bisa bertanya lagi ke Si Jajang atau menghubungi admin Green Point.',
-      },
-      {
-        'keywords': ['fitur', 'menu', 'fungsi'],
-        'answer':
-            'Fitur utama aplikasi ini adalah chatbot AI, informasi layanan, dan bantuan pengguna secara cepat.',
-      },
-      {
-        'keywords': ['limit', 'kuota', 'quota', 'habis', 'ai sibuk'],
-        'answer':
-            'Kalau AI sedang limit, artinya batas penggunaan sementara sudah tercapai. Tunggu beberapa saat sampai indikator di kanan atas normal kembali.',
-      },
-      {
-        'keywords': ['terima kasih', 'makasih', 'thanks', 'thank you'],
-        'answer': 'Sama-sama! Senang bisa membantu kamu.',
-      },
-      {
-        'keywords': ['error', 'gagal', 'tidak bisa', 'bug', 'masalah'],
-        'answer':
-            'Maaf kalau ada kendala. Coba tutup lalu buka ulang aplikasi. Jika masih bermasalah, silakan hubungi admin atau pengembang aplikasi.',
-      },
-    ];
-
-    for (final item in faqData) {
-      final keywords = item['keywords'] as List<String>;
-      final isMatch = keywords.any((keyword) => q.contains(keyword));
-
-      if (isMatch) {
-        return item['answer'] as String;
-      }
+  List<GroqChatTurn> _buildRecentConversationHistory() {
+    if (_messages.length <= 1) {
+      return const [];
     }
 
-    return null;
+    final previousMessages = _messages.sublist(0, _messages.length - 1);
+    final startIndex = previousMessages.length > 6
+        ? previousMessages.length - 6
+        : 0;
+
+    return previousMessages.sublist(startIndex).map((message) {
+      return GroqChatTurn(
+        role: message.isBotMessage ? 'assistant' : 'user',
+        content: message.text,
+      );
+    }).toList();
+  }
+
+  String _buildCacheKey(
+    String normalizedMessage,
+    List<GroqChatTurn> conversationHistory,
+  ) {
+    final contextKey = conversationHistory
+        .map((turn) => '${turn.role}:${_normalizeText(turn.content)}')
+        .join('|');
+
+    return '$contextKey::$normalizedMessage';
   }
 
   void _resetDailyUsageIfNeeded() {
     final now = DateTime.now();
-    final isDifferentDay = now.year != _usageDate.year ||
+    final isDifferentDay =
+        now.year != _usageDate.year ||
         now.month != _usageDate.month ||
         now.day != _usageDate.day;
 
@@ -294,22 +277,27 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
     if (message.length > 300) {
       setState(() {
-        _messages.add(ChatMessage(
-          text: 'Pertanyaan terlalu panjang. Coba ringkas maksimal 300 karakter ya.',
-          isBotMessage: true,
-          timestamp: DateTime.now(),
-        ));
+        _messages.add(
+          ChatMessage(
+            text:
+                'Pertanyaan terlalu panjang. Coba ringkas maksimal 300 karakter ya.',
+            isBotMessage: true,
+            timestamp: DateTime.now(),
+          ),
+        );
       });
       _scrollToBottom();
       return;
     }
 
     setState(() {
-      _messages.add(ChatMessage(
-        text: message,
-        isBotMessage: false,
-        timestamp: DateTime.now(),
-      ));
+      _messages.add(
+        ChatMessage(
+          text: message,
+          isBotMessage: false,
+          timestamp: DateTime.now(),
+        ),
+      );
       _messageController.clear();
       _isLoading = true;
     });
@@ -324,11 +312,13 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
       if (mounted) {
         setState(() {
-          _messages.add(ChatMessage(
-            text: localAnswer,
-            isBotMessage: true,
-            timestamp: DateTime.now(),
-          ));
+          _messages.add(
+            ChatMessage(
+              text: localAnswer,
+              isBotMessage: true,
+              timestamp: DateTime.now(),
+            ),
+          );
           _isLoading = false;
         });
         _scrollToBottom();
@@ -338,17 +328,24 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     }
 
     final normalizedMessage = _normalizeText(message);
+    final recentConversationHistory = _buildRecentConversationHistory();
+    final cacheKey = _buildCacheKey(
+      normalizedMessage,
+      recentConversationHistory,
+    );
 
-    if (_answerCache.containsKey(normalizedMessage)) {
+    if (_answerCache.containsKey(cacheKey)) {
       await Future.delayed(const Duration(milliseconds: 350));
 
       if (mounted) {
         setState(() {
-          _messages.add(ChatMessage(
-            text: _answerCache[normalizedMessage]!,
-            isBotMessage: true,
-            timestamp: DateTime.now(),
-          ));
+          _messages.add(
+            ChatMessage(
+              text: _answerCache[cacheKey]!,
+              isBotMessage: true,
+              timestamp: DateTime.now(),
+            ),
+          );
           _isLoading = false;
         });
         _scrollToBottom();
@@ -362,11 +359,13 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
       if (mounted) {
         setState(() {
-          _messages.add(ChatMessage(
-            text: _getLimitMessage(),
-            isBotMessage: true,
-            timestamp: DateTime.now(),
-          ));
+          _messages.add(
+            ChatMessage(
+              text: _getLimitMessage(),
+              isBotMessage: true,
+              timestamp: DateTime.now(),
+            ),
+          );
           _isLoading = false;
         });
         _scrollToBottom();
@@ -378,17 +377,22 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     try {
       _markAiRequestUsed();
 
-      final botResponse = await _groqService.sendMessage(message);
+      final botResponse = await _groqService.sendMessage(
+        message,
+        conversationHistory: recentConversationHistory,
+      );
 
-      _answerCache[normalizedMessage] = botResponse;
+      _answerCache[cacheKey] = botResponse;
 
       if (mounted) {
         setState(() {
-          _messages.add(ChatMessage(
-            text: botResponse,
-            isBotMessage: true,
-            timestamp: DateTime.now(),
-          ));
+          _messages.add(
+            ChatMessage(
+              text: botResponse,
+              isBotMessage: true,
+              timestamp: DateTime.now(),
+            ),
+          );
           _isLoading = false;
         });
         _scrollToBottom();
@@ -396,8 +400,9 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     } catch (e) {
       debugPrint('Error sending message with Groq: $e');
 
-      final isRateLimitError =
-          e is GroqApiException ? e.isRateLimit : e.toString().contains('429');
+      final isRateLimitError = e is GroqApiException
+          ? e.isRateLimit
+          : e.toString().contains('429');
 
       if (isRateLimitError) {
         _activateAiLimitFromError(e);
@@ -405,13 +410,15 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
       if (mounted) {
         setState(() {
-          _messages.add(ChatMessage(
-            text: isRateLimitError
-                ? _getLimitMessage()
-                : 'Maaf, Si Jajang sedang sibuk atau koneksi bermasalah. Coba lagi sebentar ya.',
-            isBotMessage: true,
-            timestamp: DateTime.now(),
-          ));
+          _messages.add(
+            ChatMessage(
+              text: isRateLimitError
+                  ? _getLimitMessage()
+                  : 'Maaf, Si Jajang sedang sibuk atau koneksi bermasalah. Coba lagi sebentar ya.',
+              isBotMessage: true,
+              timestamp: DateTime.now(),
+            ),
+          );
           _isLoading = false;
         });
         _scrollToBottom();
@@ -446,9 +453,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       child: Container(
         decoration: const BoxDecoration(
           color: _surface,
-          border: Border(
-            bottom: BorderSide(color: _border, width: 1),
-          ),
+          border: Border(bottom: BorderSide(color: _border, width: 1)),
         ),
         child: SafeArea(
           bottom: false,
@@ -477,9 +482,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                 ),
                 const SizedBox(width: 12),
                 const Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: Row(
                     children: [
                       Text(
                         'Si Jajang',
@@ -492,29 +495,10 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                           letterSpacing: -0.2,
                         ),
                       ),
-                      SizedBox(height: 3),
-                      Row(
-                        children: [
-                          _OnlineDot(),
-                          SizedBox(width: 6),
-                          Text(
-                            'Groq AI',
-                            style: TextStyle(
-                              color: _textMuted,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                      ),
+                      SizedBox(width: 8),
+                      _OnlineDot(),
                     ],
                   ),
-                ),
-                _LimitBadge(
-                  used: _aiRequestsToday,
-                  max: _localDailyRequestLimit,
-                  isLimited: _isAiLimited,
-                  waitSeconds: _getLimitWaitSeconds(),
                 ),
               ],
             ),
@@ -587,9 +571,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
       ),
       decoration: const BoxDecoration(
         color: _surface,
-        border: Border(
-          top: BorderSide(color: _border, width: 1),
-        ),
+        border: Border(top: BorderSide(color: _border, width: 1)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
@@ -658,58 +640,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
 // ─── Sub-widgets ──────────────────────────────────────────────────────────────
 
-class _LimitBadge extends StatelessWidget {
-  const _LimitBadge({
-    required this.used,
-    required this.max,
-    required this.isLimited,
-    required this.waitSeconds,
-  });
-
-  final int used;
-  final int max;
-  final bool isLimited;
-  final int waitSeconds;
-
-  static const Color _primary = Color(0xFF2D5A3D);
-  static const Color _primarySoft = Color(0xFFEAF3ED);
-  static const Color _dangerSoft = Color(0xFFFFF0E8);
-  static const Color _danger = Color(0xFFB94A20);
-  static const Color _border = Color(0xFFE4E8E4);
-
-  @override
-  Widget build(BuildContext context) {
-    final safeUsed = used.clamp(0, max);
-    final text =
-        isLimited && waitSeconds > 0 ? 'Limit ${waitSeconds}s' : 'AI $safeUsed/$max';
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-      decoration: BoxDecoration(
-        color: isLimited ? _dangerSoft : _primarySoft,
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(
-          color: isLimited ? _danger.withOpacity(0.25) : _border,
-        ),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: isLimited ? _danger : _primary,
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-          letterSpacing: -0.1,
-        ),
-      ),
-    );
-  }
-}
-
 class _HeaderButton extends StatelessWidget {
-  const _HeaderButton({
-    required this.icon,
-    required this.onTap,
-  });
+  const _HeaderButton({required this.icon, required this.onTap});
 
   final IconData icon;
   final VoidCallback onTap;
@@ -731,11 +663,7 @@ class _HeaderButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(14),
           border: Border.all(color: _border),
         ),
-        child: Icon(
-          icon,
-          size: 18,
-          color: _primary,
-        ),
+        child: Icon(icon, size: 18, color: _primary),
       ),
     );
   }
@@ -782,8 +710,9 @@ class _MessageBubble extends StatelessWidget {
     return Padding(
       padding: EdgeInsets.only(bottom: isFirst ? 14 : 7),
       child: Row(
-        mainAxisAlignment:
-            isBot ? MainAxisAlignment.start : MainAxisAlignment.end,
+        mainAxisAlignment: isBot
+            ? MainAxisAlignment.start
+            : MainAxisAlignment.end,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           if (isBot) ...[
@@ -804,12 +733,15 @@ class _MessageBubble extends StatelessWidget {
           ],
           Flexible(
             child: Column(
-              crossAxisAlignment:
-                  isBot ? CrossAxisAlignment.start : CrossAxisAlignment.end,
+              crossAxisAlignment: isBot
+                  ? CrossAxisAlignment.start
+                  : CrossAxisAlignment.end,
               children: [
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 15, vertical: 11),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 15,
+                    vertical: 11,
+                  ),
                   decoration: BoxDecoration(
                     color: isBot ? _surface : _primary,
                     borderRadius: BorderRadius.circular(18),
@@ -877,8 +809,7 @@ class _TypingDots extends StatelessWidget {
             builder: (_, __) {
               final delay = i * 0.33;
               final t = ((controller.value - delay) % 1.0).clamp(0.0, 1.0);
-              final opacity =
-                  (t < 0.5 ? t * 2 : (1 - t) * 2).clamp(0.35, 1.0);
+              final opacity = (t < 0.5 ? t * 2 : (1 - t) * 2).clamp(0.35, 1.0);
 
               return Opacity(
                 opacity: opacity,
@@ -909,5 +840,6 @@ class ChatMessage {
   ChatMessage({
     required this.text,
     required this.isBotMessage,
-    required this.timestamp,  });
+    required this.timestamp,
+  });
 }

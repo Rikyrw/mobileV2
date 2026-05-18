@@ -1,3 +1,4 @@
+import 'package:bcrypt/bcrypt.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -34,21 +35,28 @@ class FirebaseAccountService {
   }) async {
     _ensureFirebaseReady();
     final email = await _resolveEmail(identifier);
-    final credential = await _auth.signInWithEmailAndPassword(
-      email: email,
-      password: password,
-    );
 
-    final user = credential.user;
-    if (user != null) {
-      await _upsertUserProfile(
-        user: user,
-        provider: 'password',
-        fullName: user.displayName,
+    try {
+      return await _signInWithFirebasePassword(
+        email: email,
+        password: password,
       );
-    }
+    } on FirebaseAuthException catch (error) {
+      if (!_shouldTryLegacyNasabahFallback(error)) {
+        rethrow;
+      }
 
-    return credential;
+      final migratedCredential = await _tryMigrateLegacyNasabahAccount(
+        identifier: identifier,
+        password: password,
+      );
+
+      if (migratedCredential != null) {
+        return migratedCredential;
+      }
+
+      rethrow;
+    }
   }
 
   static Future<UserCredential> createEmailPasswordAccount({
@@ -63,6 +71,7 @@ class FirebaseAccountService {
     final normalizedEmail = email.trim().toLowerCase();
     final normalizedUserName = userName.trim();
 
+    await _assertEmailAvailableInMirror(normalizedEmail);
     await _assertUsernameAvailable(normalizedUserName);
 
     final credential = await _auth.createUserWithEmailAndPassword(
@@ -281,27 +290,42 @@ class FirebaseAccountService {
       return value;
     }
 
-    final snapshot = await _users
-        .where('user_name_lowercase', isEqualTo: value)
-        .limit(1)
-        .get();
-
-    if (snapshot.docs.isEmpty) {
-      throw FirebaseAuthException(code: 'user-not-found');
+    final mirroredEmail = await _findMirroredEmailByUsername(identifier);
+    if (mirroredEmail != null) {
+      return mirroredEmail;
     }
 
-    final email = snapshot.docs.first.data()['email'] as String?;
-    if (email == null || email.isEmpty) {
-      throw FirebaseAuthException(code: 'user-not-found');
+    try {
+      final snapshot = await _users
+          .where('user_name_lowercase', isEqualTo: value)
+          .limit(1)
+          .get();
+
+      if (snapshot.docs.isNotEmpty) {
+        final email = _text(snapshot.docs.first.data()['email'])?.toLowerCase();
+        if (email != null) {
+          return email;
+        }
+      }
+    } catch (e) {
+      debugPrint('Firestore username lookup skipped: $e');
     }
 
-    return email;
+    throw FirebaseAuthException(code: 'user-not-found');
   }
 
   static Future<void> _assertUsernameAvailable(String userName) async {
     final value = userName.trim().toLowerCase();
     if (value.isEmpty) {
       return;
+    }
+
+    final mirroredUser = await _findNasabahByIdentifier(
+      userName,
+      includeEmailMatch: false,
+    );
+    if (mirroredUser != null) {
+      throw FirebaseAuthException(code: 'username-already-in-use');
     }
 
     final snapshot = await _users
@@ -314,6 +338,29 @@ class FirebaseAccountService {
     }
   }
 
+  static Future<void> _assertEmailAvailableInMirror(String email) async {
+    final value = email.trim().toLowerCase();
+    if (value.isEmpty) {
+      return;
+    }
+
+    try {
+      final existingRows = await Supabase.instance.client
+          .from('nasabah')
+          .select('id_nasabah')
+          .eq('email', value)
+          .limit(1);
+
+      if (existingRows.isNotEmpty) {
+        throw FirebaseAuthException(code: 'email-already-in-use');
+      }
+    } on FirebaseAuthException {
+      rethrow;
+    } catch (e) {
+      debugPrint('Supabase email availability lookup skipped: $e');
+    }
+  }
+
   static Future<Map<String, dynamic>> _upsertUserProfile({
     required User user,
     required String provider,
@@ -323,6 +370,7 @@ class FirebaseAccountService {
     String? phone,
     String? photoUrl,
     String? googleId,
+    num? balance,
   }) async {
     final email = _text(user.email)?.toLowerCase();
     if (email == null) {
@@ -351,6 +399,9 @@ class FirebaseAccountService {
     final resolvedPhone = _text(phone) ?? _text(existing['no_hp']);
     final resolvedPhoto =
         _text(photoUrl) ?? _text(user.photoURL) ?? _text(existing['photo_url']);
+    final resolvedBalance = snapshot.exists
+        ? (existing['saldo'] as num?) ?? balance ?? 0
+        : balance ?? (existing['saldo'] as num?) ?? 0;
 
     final data = <String, dynamic>{
       'uid': user.uid,
@@ -377,7 +428,7 @@ class FirebaseAccountService {
     }
 
     if (!snapshot.exists) {
-      data['saldo'] = 0;
+      data['saldo'] = resolvedBalance;
       data['created_at'] = FieldValue.serverTimestamp();
     }
 
@@ -394,7 +445,7 @@ class FirebaseAccountService {
       'no_hp': resolvedPhone,
       'photo_url': resolvedPhoto,
       'google_id': googleId ?? existing['google_id'],
-      'saldo': existing['saldo'] ?? 0,
+      'saldo': resolvedBalance,
     };
 
     await _syncNasabahMirror(user: user, profile: profile);
@@ -446,6 +497,192 @@ class FirebaseAccountService {
     } catch (e) {
       debugPrint('Supabase nasabah mirror skipped: $e');
     }
+  }
+
+  static Future<UserCredential> _signInWithFirebasePassword({
+    required String email,
+    required String password,
+  }) async {
+    final credential = await _auth.signInWithEmailAndPassword(
+      email: email,
+      password: password,
+    );
+
+    final user = credential.user;
+    if (user != null) {
+      await _upsertUserProfile(
+        user: user,
+        provider: 'password',
+        fullName: user.displayName,
+      );
+    }
+
+    return credential;
+  }
+
+  static bool _shouldTryLegacyNasabahFallback(FirebaseAuthException error) {
+    return error.code == 'user-not-found' ||
+        error.code == 'wrong-password' ||
+        error.code == 'invalid-credential';
+  }
+
+  static Future<UserCredential?> _tryMigrateLegacyNasabahAccount({
+    required String identifier,
+    required String password,
+  }) async {
+    final record = await _findNasabahByIdentifier(identifier);
+    if (record == null) {
+      return null;
+    }
+
+    final storedPassword = _text(record['password']);
+    final email = _text(record['email'])?.toLowerCase();
+
+    if (storedPassword == null ||
+        email == null ||
+        storedPassword.startsWith('firebase-auth:') ||
+        !_looksLikeBcryptHash(storedPassword) ||
+        !BCrypt.checkpw(password, storedPassword)) {
+      return null;
+    }
+
+    final fullName = _text(record['nama_lengkap']);
+    final userName = _text(record['user_name']);
+    final address = _text(record['alamat']);
+    final phone = _text(record['no_hp']);
+    final photoUrl = _text(record['photo_url']);
+    final googleId = _text(record['google_id']);
+    final balance = record['saldo'] as num?;
+
+    try {
+      final credential = await _auth.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+
+      final user = credential.user;
+      if (user == null) {
+        throw FirebaseAuthException(
+          code: 'missing-user',
+          message: 'Firebase tidak mengembalikan data pengguna.',
+        );
+      }
+
+      if (fullName != null) {
+        await user.updateDisplayName(fullName);
+      }
+
+      await _upsertUserProfile(
+        user: user,
+        provider: 'password',
+        fullName: fullName,
+        userName: userName,
+        address: address,
+        phone: phone,
+        photoUrl: photoUrl,
+        googleId: googleId,
+        balance: balance,
+      );
+      await _markNasabahPasswordManagedByFirebase(
+        email: email,
+        firebaseUid: user.uid,
+      );
+
+      return credential;
+    } on FirebaseAuthException catch (error) {
+      if (error.code != 'email-already-in-use') {
+        rethrow;
+      }
+
+      final credential = await _signInWithFirebasePassword(
+        email: email,
+        password: password,
+      );
+      final user = credential.user;
+      if (user != null) {
+        await _markNasabahPasswordManagedByFirebase(
+          email: email,
+          firebaseUid: user.uid,
+        );
+      }
+      return credential;
+    }
+  }
+
+  static Future<String?> _findMirroredEmailByUsername(String userName) async {
+    final record = await _findNasabahByIdentifier(
+      userName,
+      includeEmailMatch: false,
+    );
+    return _text(record?['email'])?.toLowerCase();
+  }
+
+  static Future<Map<String, dynamic>?> _findNasabahByIdentifier(
+    String identifier, {
+    bool includeEmailMatch = true,
+  }) async {
+    final value = identifier.trim();
+    if (value.isEmpty) {
+      return null;
+    }
+
+    try {
+      final client = Supabase.instance.client;
+
+      if (includeEmailMatch) {
+        final emailCandidates = <String>{value, value.toLowerCase()};
+        for (final candidate in emailCandidates) {
+          final emailRows = await client
+              .from('nasabah')
+              .select(
+                'id_nasabah,user_name,nama_lengkap,email,password,no_hp,alamat,photo_url,google_id,saldo',
+              )
+              .eq('email', candidate)
+              .limit(1);
+
+          if (emailRows.isNotEmpty) {
+            return Map<String, dynamic>.from(emailRows.first);
+          }
+        }
+      }
+
+      final userNameRows = await client
+          .from('nasabah')
+          .select(
+            'id_nasabah,user_name,nama_lengkap,email,password,no_hp,alamat,photo_url,google_id,saldo',
+          )
+          .eq('user_name', value)
+          .limit(1);
+
+      if (userNameRows.isNotEmpty) {
+        return Map<String, dynamic>.from(userNameRows.first);
+      }
+    } catch (e) {
+      debugPrint('Supabase nasabah lookup skipped: $e');
+    }
+
+    return null;
+  }
+
+  static Future<void> _markNasabahPasswordManagedByFirebase({
+    required String email,
+    required String firebaseUid,
+  }) async {
+    try {
+      await Supabase.instance.client
+          .from('nasabah')
+          .update({'password': 'firebase-auth:$firebaseUid'})
+          .eq('email', email);
+    } catch (e) {
+      debugPrint('Supabase password marker update skipped: $e');
+    }
+  }
+
+  static bool _looksLikeBcryptHash(String value) {
+    return value.startsWith(r'$2a$') ||
+        value.startsWith(r'$2b$') ||
+        value.startsWith(r'$2x$') ||
+        value.startsWith(r'$2y$');
   }
 
   static GoogleSignIn _buildGoogleSignIn({bool requireWebClientId = true}) {
