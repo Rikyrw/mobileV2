@@ -205,6 +205,15 @@ class _TransaksiScreenState extends State<TransaksiScreen> {
     if (raw.startsWith('emoney:')) {
       return 'No Tujuan ${raw.replaceFirst('emoney:', '')}';
     }
+    if (raw.startsWith('pulsa:')) {
+      final parts = raw.split(':');
+      if (parts.length >= 3) {
+        final operator = parts[1].toUpperCase();
+        final noHp = parts.sublist(2).join(':');
+        return 'No HP $noHp ($operator)';
+      }
+      return 'No HP ${raw.replaceFirst('pulsa:', '')}';
+    }
     return raw;
   }
 

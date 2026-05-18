@@ -33,6 +33,9 @@ class _PulsaScreenState extends State<PulsaScreen> {
   String? _fetchedUserName;
   bool _loadingProfile = false;
   String? _currentEmail;
+  int? _nasabahId;
+  double? _saldo;
+  bool _submitting = false;
 
   @override
   void initState() {
@@ -65,15 +68,18 @@ class _PulsaScreenState extends State<PulsaScreen> {
 
       if (email != null && email.isNotEmpty) {
         final res = await Supabase.instance.client
-            .from('nasabah')
-            .select('nama_lengkap,user_name,email')
-            .eq('email', email)
-            .limit(1);
+          .from('nasabah')
+          .select('id_nasabah,nama_lengkap,user_name,email,saldo')
+          .eq('email', email)
+          .limit(1);
 
         if (res.isNotEmpty) {
           final record = res.first;
+          final saldoValue = (record['saldo'] as num?)?.toDouble();
           setState(() {
             _fetchedUserName = (record['nama_lengkap'] as String?) ?? (record['user_name'] as String?);
+            _nasabahId = record['id_nasabah'] as int?;
+            _saldo = saldoValue;
           });
         }
       }
@@ -81,6 +87,90 @@ class _PulsaScreenState extends State<PulsaScreen> {
       debugPrint('Load user name error: $e');
     } finally {
       if (mounted) setState(() => _loadingProfile = false);
+    }
+  }
+
+  String _formatRupiah(int value) {
+    final digits = value.toString();
+    final buffer = StringBuffer();
+    for (var i = 0; i < digits.length; i++) {
+      final position = digits.length - i;
+      buffer.write(digits[i]);
+      if (position > 1 && position % 3 == 1) {
+        buffer.write('.');
+      }
+    }
+    return 'Rp ${buffer.toString()}';
+  }
+
+  Future<void> _submitPulsa() async {
+    if (_submitting) return;
+
+    final noTelepon = _noTeleponController.text.trim();
+    if (noTelepon.isEmpty || selectedOperator == null || selectedNominal == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Lengkapi semua data terlebih dahulu.')),
+      );
+      return;
+    }
+
+    if (_nasabahId == null || _saldo == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Data nasabah belum tersedia.')),
+      );
+      return;
+    }
+
+    final nominal = int.tryParse(selectedNominal ?? '');
+    if (nominal == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Nominal tidak valid.')),
+      );
+      return;
+    }
+
+    if ((_saldo ?? 0) < nominal) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Saldo tidak mencukupi.')),
+      );
+      return;
+    }
+
+    setState(() => _submitting = true);
+
+    try {
+      final today = DateTime.now().toIso8601String().split('T').first;
+      await Supabase.instance.client.from('penarikan_saldo').insert({
+        'id_nasabah': _nasabahId,
+        'jenis_penukaran': 'pulsa',
+        'nominal': nominal,
+        'status': 'pending',
+        'tanggal_pengajuan': today,
+        'deskripsi': 'pulsa:$selectedOperator:$noTelepon',
+      });
+
+      if (mounted) {
+        setState(() {
+          selectedOperator = null;
+          selectedNominal = null;
+          _noTeleponController.clear();
+        });
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Permintaan berhasil dikirim.')),
+        );
+      }
+    } catch (e) {
+      debugPrint('Submit pulsa error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Gagal memproses transaksi.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _submitting = false);
     }
   }
 
@@ -148,7 +238,7 @@ class _PulsaScreenState extends State<PulsaScreen> {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                _dummyData.saldo,
+                                'Saldo: ${_formatRupiah((_saldo ?? 0).round())}',
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 14,
@@ -317,6 +407,15 @@ class _PulsaScreenState extends State<PulsaScreen> {
                                       child: const Text('Indosat'),
                                     ),
                                   ),
+                                  DropdownMenuItem(
+                                    value: 'xl',
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                      ),
+                                      child: const Text('XL'),
+                                    ),
+                                  ),
                                   // DropdownMenuItem(
                                   //   value: 'axis',
                                   //   child: Padding(
@@ -394,7 +493,7 @@ class _PulsaScreenState extends State<PulsaScreen> {
                                 ),
                                 items: [
                                   DropdownMenuItem(
-                                    value: 'rp_5000',
+                                    value: '5000',
                                     child: Padding(
                                       padding: const EdgeInsets.symmetric(
                                         horizontal: 16,
@@ -403,7 +502,7 @@ class _PulsaScreenState extends State<PulsaScreen> {
                                     ),
                                   ),
                                   DropdownMenuItem(
-                                    value: 'rp_10000',
+                                    value: '10000',
                                     child: Padding(
                                       padding: const EdgeInsets.symmetric(
                                         horizontal: 16,
@@ -412,7 +511,16 @@ class _PulsaScreenState extends State<PulsaScreen> {
                                     ),
                                   ),
                                   DropdownMenuItem(
-                                    value: 'rp_20000',
+                                    value: '15000',
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                      ),
+                                      child: const Text('Rp 15.000'),
+                                    ),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: '20000',
                                     child: Padding(
                                       padding: const EdgeInsets.symmetric(
                                         horizontal: 16,
@@ -421,7 +529,52 @@ class _PulsaScreenState extends State<PulsaScreen> {
                                     ),
                                   ),
                                   DropdownMenuItem(
-                                    value: 'rp_50000',
+                                    value: '25000',
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                      ),
+                                      child: const Text('Rp 25.000'),
+                                    ),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: '30000',
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                      ),
+                                      child: const Text('Rp 30.000'),
+                                    ),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: '35000',
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                      ),
+                                      child: const Text('Rp 35.000'),
+                                    ),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: '40000',
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                      ),
+                                      child: const Text('Rp 40.000'),
+                                    ),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: '45000',
+                                    child: Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 16,
+                                      ),
+                                      child: const Text('Rp 45.000'),
+                                    ),
+                                  ),
+                                  DropdownMenuItem(
+                                    value: '50000',
                                     child: Padding(
                                       padding: const EdgeInsets.symmetric(
                                         horizontal: 16,
@@ -452,7 +605,7 @@ class _PulsaScreenState extends State<PulsaScreen> {
                             width: double.infinity,
                             height: 50,
                             child: ElevatedButton(
-                              onPressed: () {},
+                              onPressed: _submitting ? null : _submitPulsa,
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: const Color(0xFF315A39),
                                 elevation: 0,

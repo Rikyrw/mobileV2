@@ -30,6 +30,9 @@ class _PlnScreenState extends State<PlnScreen> {
   String? _fetchedUserName;
   bool _loadingProfile = false;
   String? _currentEmail;
+  int? _nasabahId;
+  double? _saldo;
+  bool _submitting = false;
 
   @override
   void initState() {
@@ -62,15 +65,18 @@ class _PlnScreenState extends State<PlnScreen> {
 
       if (email != null && email.isNotEmpty) {
         final res = await Supabase.instance.client
-            .from('nasabah')
-            .select('nama_lengkap,user_name,email')
-            .eq('email', email)
-            .limit(1);
+          .from('nasabah')
+          .select('id_nasabah,nama_lengkap,user_name,email,saldo')
+          .eq('email', email)
+          .limit(1);
 
         if (res.isNotEmpty) {
           final record = res.first;
+          final saldoValue = (record['saldo'] as num?)?.toDouble();
           setState(() {
             _fetchedUserName = (record['nama_lengkap'] as String?) ?? (record['user_name'] as String?);
+            _nasabahId = record['id_nasabah'] as int?;
+            _saldo = saldoValue;
           });
         }
       }
@@ -78,6 +84,89 @@ class _PlnScreenState extends State<PlnScreen> {
       debugPrint('Load user name error: $e');
     } finally {
       if (mounted) setState(() => _loadingProfile = false);
+    }
+  }
+
+  String _formatRupiah(int value) {
+    final digits = value.toString();
+    final buffer = StringBuffer();
+    for (var i = 0; i < digits.length; i++) {
+      final position = digits.length - i;
+      buffer.write(digits[i]);
+      if (position > 1 && position % 3 == 1) {
+        buffer.write('.');
+      }
+    }
+    return 'Rp ${buffer.toString()}';
+  }
+
+  Future<void> _submitPln() async {
+    if (_submitting) return;
+
+    final noToken = _noTokenController.text.trim();
+    if (noToken.isEmpty || selectedNominal == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Lengkapi semua data terlebih dahulu.')),
+      );
+      return;
+    }
+
+    if (_nasabahId == null || _saldo == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Data nasabah belum tersedia.')),
+      );
+      return;
+    }
+
+    final nominal = int.tryParse(selectedNominal ?? '');
+    if (nominal == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Nominal tidak valid.')),
+      );
+      return;
+    }
+
+    if ((_saldo ?? 0) < nominal) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Saldo tidak mencukupi.')),
+      );
+      return;
+    }
+
+    setState(() => _submitting = true);
+
+    try {
+      final today = DateTime.now().toIso8601String().split('T').first;
+      await Supabase.instance.client.from('penarikan_saldo').insert({
+        'id_nasabah': _nasabahId,
+        'jenis_penukaran': 'pln',
+        'nominal': nominal,
+        'status': 'pending',
+        'tanggal_pengajuan': today,
+        'deskripsi': 'pln:$noToken',
+      });
+
+      if (mounted) {
+        setState(() {
+          selectedNominal = null;
+          _noTokenController.clear();
+        });
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Permintaan berhasil dikirim.')),
+        );
+      }
+    } catch (e) {
+      debugPrint('Submit pln error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Gagal memproses transaksi.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _submitting = false);
     }
   }
 
@@ -145,7 +234,7 @@ class _PlnScreenState extends State<PlnScreen> {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                _dummyData.saldo,
+                                'Saldo: ${_formatRupiah((_saldo ?? 0).round())}',
                                 style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 14,
@@ -297,7 +386,7 @@ class _PlnScreenState extends State<PlnScreen> {
                                 ),
                                 items: [
                                   DropdownMenuItem(
-                                    value: 'rp_50000',
+                                    value: '20000',
                                     child: Padding(
                                       padding: const EdgeInsets.symmetric(
                                         horizontal: 16,
@@ -306,7 +395,7 @@ class _PlnScreenState extends State<PlnScreen> {
                                     ),
                                   ),
                                   DropdownMenuItem(
-                                    value: 'rp_100000',
+                                    value: '50000',
                                     child: Padding(
                                       padding: const EdgeInsets.symmetric(
                                         horizontal: 16,
@@ -315,7 +404,7 @@ class _PlnScreenState extends State<PlnScreen> {
                                     ),
                                   ),
                                   DropdownMenuItem(
-                                    value: 'rp_200000',
+                                    value: '100000',
                                     child: Padding(
                                       padding: const EdgeInsets.symmetric(
                                         horizontal: 16,
@@ -346,7 +435,7 @@ class _PlnScreenState extends State<PlnScreen> {
                             width: double.infinity,
                             height: 50,
                             child: ElevatedButton(
-                              onPressed: () {},
+                              onPressed: _submitting ? null : _submitPln,
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: const Color(0xFF315A39),
                                 elevation: 0,
