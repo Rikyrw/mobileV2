@@ -4,65 +4,37 @@ class WelcomeScreen extends StatefulWidget {
   const WelcomeScreen({super.key});
 
   @override
-  _WelcomeScreenState createState() => _WelcomeScreenState();
+  State<WelcomeScreen> createState() => _WelcomeScreenState();
 }
 
 class _WelcomeScreenState extends State<WelcomeScreen>
-    with TickerProviderStateMixin {
-  late AnimationController _fadeController;
-  late Animation<double> _fadeAnimation;
-  late AnimationController _slideController;
-  late Animation<Offset> _slideAnimation;
-  late AnimationController _scaleController;
-  late Animation<double> _scaleAnimation;
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _introController;
+  late final Animation<double> _fadeAnimation;
+  late final Animation<Offset> _slideAnimation;
 
   @override
   void initState() {
     super.initState();
-
-    // Fade animation for images
-    _fadeController = AnimationController(
-      duration: const Duration(seconds: 2),
+    _introController = AnimationController(
+      duration: const Duration(milliseconds: 650),
       vsync: this,
     );
-    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _fadeController, curve: Curves.easeIn),
+    _fadeAnimation = CurvedAnimation(
+      parent: _introController,
+      curve: Curves.easeOutCubic,
     );
+    _slideAnimation =
+        Tween<Offset>(begin: const Offset(0, 0.08), end: Offset.zero).animate(
+          CurvedAnimation(parent: _introController, curve: Curves.easeOutCubic),
+        );
 
-    // Slide animation for text
-    _slideController = AnimationController(
-      duration: const Duration(seconds: 1),
-      vsync: this,
-    );
-    _slideAnimation = Tween<Offset>(
-      begin: const Offset(0, 1),
-      end: Offset.zero,
-    ).animate(
-      CurvedAnimation(parent: _slideController, curve: Curves.easeOut),
-    );
-
-    // Scale animation for buttons
-    _scaleController = AnimationController(
-      duration: const Duration(seconds: 1),
-      vsync: this,
-    );
-    _scaleAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _scaleController, curve: Curves.elasticOut),
-    );
-
-    // Start animations sequentially
-    _fadeController.forward().then((_) {
-      _slideController.forward().then((_) {
-        _scaleController.forward();
-      });
-    });
+    _introController.forward();
   }
 
   @override
   void dispose() {
-    _fadeController.dispose();
-    _slideController.dispose();
-    _scaleController.dispose();
+    _introController.dispose();
     super.dispose();
   }
 
@@ -71,123 +43,107 @@ class _WelcomeScreenState extends State<WelcomeScreen>
     return Scaffold(
       backgroundColor: const Color(0xFF2E5634),
       body: SafeArea(
-        child: Container(
-          width: double.infinity,
-          height: double.infinity,
-          color: const Color(0xFF2E5634),
-          child: Column(
-            children: [
-              const SizedBox(height: 24),
-              AnimatedBuilder(
-                animation: _fadeAnimation,
-                builder: (context, child) {
-                  return Opacity(
-                    opacity: _fadeAnimation.value,
-                    child: SizedBox(
-                      height: 220,
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          SizedBox(
-                            height: 210,
-                            child: Image.asset(
-                              'assets/pohon1.png',
-                              fit: BoxFit.contain,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          // SizedBox(
-                          //   height: 48,
-                          //   child: Image.asset('assets/gp.png', fit: BoxFit.contain),
-                          // ),
-                        ],
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final imageHeight = (constraints.maxHeight * 0.28)
+                .clamp(150.0, 220.0)
+                .toDouble();
+
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(28, 22, 28, 34),
+              child: FadeTransition(
+                opacity: _fadeAnimation,
+                child: SlideTransition(
+                  position: _slideAnimation,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      const Spacer(),
+                      RepaintBoundary(
+                        child: Image.asset(
+                          'assets/pohon1.png',
+                          height: imageHeight,
+                          fit: BoxFit.contain,
+                        ),
                       ),
-                    ),
-                  );
-                },
-              ),
-              const SizedBox(height: 6),
-              SlideTransition(
-                position: _slideAnimation,
-                child: const Text(
-                  'Selamat Datang',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 36,
-                    fontWeight: FontWeight.w400,
-                    fontFamily: 'Roboto',
-                  ),
-                ),
-              ),
-              const SizedBox(height: 10),
-              SlideTransition(
-                position: _slideAnimation,
-                child: const Text(
-                  'di GreenPoint',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 24,
-                    fontWeight: FontWeight.w400,
-                    fontFamily: 'Roboto',
-                  ),
-                ),
-              ),
-              const Spacer(),
-              ScaleTransition(
-                scale: _scaleAnimation,
-                child: SizedBox(
-                  width: 250,
-                  height: 50,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      Navigator.of(context).pushNamed('/sig-in');
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      foregroundColor: Colors.black,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                    ),
-                    child: const Text(
-                      'Masuk',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w400,
-                        fontFamily: 'Roboto',
+                      const SizedBox(height: 24),
+                      const Text(
+                        'Selamat Datang',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 32,
+                          fontWeight: FontWeight.w700,
+                          fontFamily: 'Roboto',
+                        ),
                       ),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 30),
-              ScaleTransition(
-                scale: _scaleAnimation,
-                child: SizedBox(
-                  width: 250,
-                  height: 50,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      Navigator.of(context).pushNamed('/sign-up');
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.white,
-                      foregroundColor: Colors.black,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                    ),
-                    child: const Text(
-                      'Daftar',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w400,
-                        fontFamily: 'Roboto',
+                      const SizedBox(height: 8),
+                      const Text(
+                        'di GreenPoint',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Color(0xD9FFFFFF),
+                          fontSize: 18,
+                          fontWeight: FontWeight.w400,
+                          fontFamily: 'Roboto',
+                        ),
                       ),
-                    ),
+                      const Spacer(),
+                      _welcomeButton(
+                        label: 'Masuk',
+                        icon: Icons.login_rounded,
+                        onPressed: () =>
+                            Navigator.of(context).pushNamed('/sig-in'),
+                      ),
+                      const SizedBox(height: 12),
+                      _welcomeButton(
+                        label: 'Daftar',
+                        icon: Icons.person_add_alt_1_rounded,
+                        isSecondary: true,
+                        onPressed: () =>
+                            Navigator.of(context).pushNamed('/sign-up'),
+                      ),
+                    ],
                   ),
                 ),
               ),
-              const SizedBox(height: 200),
-            ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _welcomeButton({
+    required String label,
+    required IconData icon,
+    required VoidCallback onPressed,
+    bool isSecondary = false,
+  }) {
+    final foreground = isSecondary ? Colors.white : const Color(0xFF315A39);
+
+    return SizedBox(
+      height: 52,
+      child: ElevatedButton.icon(
+        onPressed: onPressed,
+        icon: Icon(icon, size: 20),
+        label: Text(label),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: isSecondary
+              ? Colors.white.withValues(alpha: 0.12)
+              : Colors.white,
+          foregroundColor: foreground,
+          elevation: 0,
+          side: isSecondary
+              ? BorderSide(color: Colors.white.withValues(alpha: 0.46))
+              : BorderSide.none,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          textStyle: const TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+            fontFamily: 'Roboto',
           ),
         ),
       ),

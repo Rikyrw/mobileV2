@@ -16,14 +16,25 @@ import 'package:mob_2/welcome_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await dotenv.load(fileName: ".env");
+  final appInitialization = _initializeAppServices().catchError((e) {
+    debugPrint('App initialization finished with warning: $e');
+  });
+  runApp(MyApp(appInitialization: appInitialization));
+}
+
+Future<void> _initializeAppServices() async {
+  try {
+    await dotenv.load(fileName: ".env");
+  } catch (e) {
+    debugPrint('Env load skipped: $e');
+  }
+
   await _initializeFirebase();
   await Supabase.initialize(
     url: 'https://yugkzkxwddabkjzooswk.supabase.co',
     anonKey:
         'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl1Z2t6a3h3ZGRhYmtqem9vc3drIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4NjY5NzcsImV4cCI6MjA5MjQ0Mjk3N30.R8QcsDWjeAxwvR55BB8eDp-hi3GACpCW0qikV_uFxFc',
   );
-  runApp(const MyApp());
 }
 
 Future<bool> _initializeFirebase() async {
@@ -73,7 +84,9 @@ FirebaseOptions? _firebaseOptionsFromEnv() {
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  const MyApp({super.key, required this.appInitialization});
+
+  final Future<void> appInitialization;
 
   @override
   Widget build(BuildContext context) {
@@ -81,6 +94,7 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
+        splashFactory: InkRipple.splashFactory,
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF315A39))
             .copyWith(
               primary: const Color(0xFF315A39),
@@ -100,6 +114,16 @@ class MyApp extends StatelessWidget {
             fontWeight: FontWeight.w700,
             fontFamily: 'Roboto',
           ),
+        ),
+        pageTransitionsTheme: const PageTransitionsTheme(
+          builders: {
+            TargetPlatform.android: FadeUpwardsPageTransitionsBuilder(),
+            TargetPlatform.fuchsia: FadeUpwardsPageTransitionsBuilder(),
+            TargetPlatform.linux: FadeUpwardsPageTransitionsBuilder(),
+            TargetPlatform.windows: FadeUpwardsPageTransitionsBuilder(),
+            TargetPlatform.iOS: CupertinoPageTransitionsBuilder(),
+            TargetPlatform.macOS: CupertinoPageTransitionsBuilder(),
+          },
         ),
         elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(
@@ -172,7 +196,7 @@ class MyApp extends StatelessWidget {
             const MainTabScaffold(initialIndex: MainTabScaffold.chatIndex),
         '/topup-saldo': (context) => const TopupSaldoScreen(),
       },
-      home: const SplashScreen(),
+      home: SplashScreen(initialization: appInitialization),
     );
   }
 }

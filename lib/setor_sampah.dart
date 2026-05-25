@@ -31,6 +31,7 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
   String? _fetchedUserName;
   String? _fetchedFullName;
   String? _fetchedAddress;
+  double? _saldo;
   bool _loadingProfile = false;
   String? _currentEmail;
   int? _nasabahId;
@@ -70,17 +71,22 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
       _currentEmail = email;
 
       if (email != null && email.isNotEmpty) {
-        final record = await AppCacheService.fetchNasabahByEmail(email);
+        final record = await AppCacheService.fetchNasabahByEmail(
+          email,
+          forceRefresh: true,
+        );
 
         if (record != null) {
           final nasabahId = record['id_nasabah'] as int?;
           final fullName = record['nama_lengkap'] as String?;
           final userName = record['user_name'] as String?;
           final address = record['alamat'] as String?;
+          final saldo = (record['saldo'] as num?)?.toDouble();
           setState(() {
             _fetchedUserName = fullName ?? userName;
             _fetchedFullName = fullName;
             _fetchedAddress = address;
+            _saldo = saldo;
             _nasabahId = nasabahId;
           });
           if (_namaController.text.trim().isEmpty) {
@@ -128,6 +134,9 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
     final senderAddress = _alamatController.text.trim().isNotEmpty
         ? _alamatController.text.trim()
         : (_fetchedAddress ?? '');
+    final saldoText = _saldo == null
+        ? (_loadingProfile ? 'Memuat...' : _dummyData.saldo)
+        : _formatRupiah(_saldo!.round());
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -216,7 +225,7 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
                               ),
                             ),
                             Text(
-                              _dummyData.saldo,
+                              saldoText,
                               style: const TextStyle(
                                 color: Color(0xFF315A39),
                                 fontSize: 24,

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -7,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import 'services/app_cache_service.dart';
 import 'services/external_url_opener.dart';
 
 class TopupSaldoScreen extends StatefulWidget {
@@ -30,7 +32,10 @@ class _TopupSaldoScreenState extends State<TopupSaldoScreen> {
   String? _fullName;
   String? _phone;
   double? _saldo;
+  List<TopupHistoryItem> _topupHistory = [];
+  DateTime? _topupHistoryDate;
   bool _loadingProfile = false;
+  bool _loadingTopupHistory = false;
   bool _submitting = false;
 
   @override
@@ -62,14 +67,12 @@ class _TopupSaldoScreenState extends State<TopupSaldoScreen> {
       _currentEmail = email;
 
       if (email != null && email.isNotEmpty) {
-        final res = await Supabase.instance.client
-            .from('nasabah')
-            .select('id_nasabah,nama_lengkap,user_name,email,saldo')
-            .eq('email', email)
-            .limit(1);
+        final record = await AppCacheService.fetchNasabahByEmail(
+          email,
+          forceRefresh: true,
+        );
 
-        if (res.isNotEmpty) {
-          final record = res.first;
+        if (record != null) {
           final saldoValue = (record['saldo'] as num?)?.toDouble();
           setState(() {
             _nasabahId = record['id_nasabah'] as int?;
@@ -77,6 +80,10 @@ class _TopupSaldoScreenState extends State<TopupSaldoScreen> {
             _phone = record['no_hp'] as String?;
             _saldo = saldoValue;
           });
+          final nasabahId = record['id_nasabah'] as int?;
+          if (nasabahId != null) {
+            _loadTopupHistory(nasabahId);
+          }
         }
       }
     } catch (e) {
@@ -84,6 +91,100 @@ class _TopupSaldoScreenState extends State<TopupSaldoScreen> {
     } finally {
       if (mounted) setState(() => _loadingProfile = false);
     }
+  }
+
+  Future<void> _loadTopupHistory(int nasabahId) async {
+    if (_loadingTopupHistory) return;
+    setState(() => _loadingTopupHistory = true);
+
+    try {
+      final rows = await _fetchTopupHistoryRows(nasabahId);
+      if (!mounted) return;
+      setState(() {
+        _topupHistory = rows.map(_mapTopupHistoryItem).toList();
+      });
+    } catch (e) {
+      debugPrint('Load topup history error: $e');
+      if (!mounted) return;
+      _showSnack('Gagal memuat riwayat top up.');
+    } finally {
+      if (mounted) setState(() => _loadingTopupHistory = false);
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchTopupHistoryRows(
+    int nasabahId,
+  ) async {
+    const orderColumns = <String?>[
+      'created_at',
+      'updated_at',
+      'transaction_time',
+      'tanggal_topup',
+      null,
+    ];
+    Object? lastError;
+
+    for (final orderColumn in orderColumns) {
+      try {
+        dynamic query = Supabase.instance.client
+            .from('topup_saldo')
+            .select('*')
+            .eq('id_nasabah', nasabahId);
+
+        if (_topupHistoryDate != null && orderColumn != null) {
+          final start = DateTime(
+            _topupHistoryDate!.year,
+            _topupHistoryDate!.month,
+            _topupHistoryDate!.day,
+          );
+          final end = start.add(const Duration(days: 1));
+          query = query
+              .gte(orderColumn, start.toUtc().toIso8601String())
+              .lt(orderColumn, end.toUtc().toIso8601String());
+        }
+
+        if (orderColumn != null) {
+          query = query.order(orderColumn, ascending: false);
+        }
+
+        final rows = await query.limit(5);
+        return (rows as List)
+            .map((row) => Map<String, dynamic>.from(row as Map))
+            .toList();
+      } catch (e) {
+        lastError = e;
+        debugPrint('Topup history order failed ($orderColumn): $e');
+      }
+    }
+
+    throw lastError ?? Exception('Topup history lookup failed.');
+  }
+
+  TopupHistoryItem _mapTopupHistoryItem(Map<String, dynamic> row) {
+    final amount =
+        row['gross_amount'] ?? row['nominal'] ?? row['amount'] ?? row['total'];
+    final status =
+        row['transaction_status']?.toString() ??
+        row['status']?.toString() ??
+        '-';
+    final orderId =
+        row['order_id']?.toString() ??
+        row['id_topup_saldo']?.toString() ??
+        row['id_topup']?.toString() ??
+        '-';
+    final date =
+        row['created_at'] ??
+        row['updated_at'] ??
+        row['transaction_time'] ??
+        row['tanggal_topup'] ??
+        row['tanggal'];
+
+    return TopupHistoryItem(
+      orderId: _shortOrderId(orderId),
+      amount: _formatRupiah(_asNum(amount).round()),
+      status: status,
+      date: _formatDate(date?.toString()),
+    );
   }
 
   int? _parseNominal() {
@@ -103,6 +204,68 @@ class _TopupSaldoScreenState extends State<TopupSaldoScreen> {
       }
     }
     return 'Rp ${buffer.toString()}';
+  }
+
+  num _asNum(dynamic value) {
+    if (value is num) return value;
+    if (value is String) {
+      return num.tryParse(value.replaceAll(RegExp(r'[^0-9.]'), '')) ?? 0;
+    }
+    return 0;
+  }
+
+  String _formatDate(String? raw) {
+    if (raw == null || raw.isEmpty) return '-';
+    try {
+      final parsed = DateTime.parse(raw).toLocal();
+      final day = parsed.day.toString().padLeft(2, '0');
+      final month = parsed.month.toString().padLeft(2, '0');
+      final year = parsed.year.toString();
+      final hour = parsed.hour.toString().padLeft(2, '0');
+      final minute = parsed.minute.toString().padLeft(2, '0');
+      return '$day-$month-$year $hour:$minute';
+    } catch (_) {
+      final dateOnly = raw.contains('T') ? raw.split('T').first : raw;
+      return dateOnly.contains(' ') ? dateOnly.split(' ').first : dateOnly;
+    }
+  }
+
+  String _formatDateOnly(DateTime date) {
+    final day = date.day.toString().padLeft(2, '0');
+    final month = date.month.toString().padLeft(2, '0');
+    final year = date.year.toString();
+    return '$day-$month-$year';
+  }
+
+  String _shortOrderId(String orderId) {
+    if (orderId == '-' || orderId.length <= 16) return orderId;
+    return '${orderId.substring(0, 8)}...${orderId.substring(orderId.length - 4)}';
+  }
+
+  Future<void> _pickTopupHistoryDate() async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _topupHistoryDate ?? now,
+      firstDate: DateTime(now.year - 3),
+      lastDate: now,
+    );
+
+    if (picked == null) return;
+
+    setState(() => _topupHistoryDate = picked);
+    final nasabahId = _nasabahId;
+    if (nasabahId != null) {
+      await _loadTopupHistory(nasabahId);
+    }
+  }
+
+  Future<void> _clearTopupHistoryDate() async {
+    setState(() => _topupHistoryDate = null);
+    final nasabahId = _nasabahId;
+    if (nasabahId != null) {
+      await _loadTopupHistory(nasabahId);
+    }
   }
 
   Future<void> _submitTopup() async {
@@ -174,7 +337,7 @@ class _TopupSaldoScreenState extends State<TopupSaldoScreen> {
       }
     } catch (e) {
       debugPrint('Topup submit error: $e');
-      _showSnack('Gagal memproses top up.');
+      _showSnack(_friendlyTopupError(e));
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
@@ -190,37 +353,47 @@ class _TopupSaldoScreenState extends State<TopupSaldoScreen> {
       if (_phone != null && _phone!.isNotEmpty) 'no_hp': _phone,
     });
     http.Response? lastResponse;
+    Object? lastError;
 
     for (final apiUrl in _resolveTopupUrls()) {
-      final response = await http.post(
-        Uri.parse(apiUrl),
-        headers: const {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-        },
-        body: body,
-      );
+      try {
+        final response = await http
+            .post(
+              Uri.parse(apiUrl),
+              headers: const {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+              },
+              body: body,
+            )
+            .timeout(const Duration(seconds: 30));
 
-      lastResponse = response;
-      if (response.statusCode != 404) {
-        return response;
+        lastResponse = response;
+        if (!_shouldTryNextTopupEndpoint(response)) {
+          return response;
+        }
+
+        debugPrint('Topup endpoint skipped: $apiUrl');
+      } catch (e) {
+        lastError = e;
+        debugPrint('Topup request error for $apiUrl: $e');
       }
-
-      debugPrint('Topup endpoint not found: $apiUrl');
     }
 
-    return lastResponse!;
+    if (lastResponse != null) return lastResponse;
+    throw lastError ?? Exception('Topup request failed.');
   }
 
   List<String> _resolveTopupUrls() {
     final urls = <String>[];
     final value = dotenv.env['TOPUP_API_URL']?.trim();
     if (value != null && value.isNotEmpty) {
-      urls.add(value);
       final originFallback = _urlFromOrigin(value, _createTopupPath);
       if (originFallback != null) {
         urls.add(originFallback);
       }
+      urls.add(value);
     }
 
     final apiBaseUrl = dotenv.env['GREENPOINT_API_BASE_URL']?.trim();
@@ -249,6 +422,18 @@ class _TopupSaldoScreenState extends State<TopupSaldoScreen> {
     return '$cleanBase/$cleanPath';
   }
 
+  bool _shouldTryNextTopupEndpoint(http.Response response) {
+    if (response.statusCode == 404 || response.statusCode == 419) {
+      return true;
+    }
+
+    return _isCsrfMismatch(response.body);
+  }
+
+  bool _isCsrfMismatch(String body) {
+    return body.toLowerCase().contains('csrf token mismatch');
+  }
+
   String? _extractMessage(String body) {
     try {
       final data = jsonDecode(body);
@@ -258,6 +443,18 @@ class _TopupSaldoScreenState extends State<TopupSaldoScreen> {
       }
     } catch (_) {}
     return null;
+  }
+
+  String _friendlyTopupError(Object error) {
+    if (error is FormatException) {
+      return 'URL top up tidak valid. Cek TOPUP_API_URL atau GREENPOINT_API_BASE_URL.';
+    }
+
+    if (error is http.ClientException) {
+      return 'Tidak bisa terhubung ke server. Periksa koneksi dan URL top up.';
+    }
+
+    return 'Gagal memproses top up.';
   }
 
   Future<void> _checkTopupStatus(String orderId) async {
@@ -279,7 +476,12 @@ class _TopupSaldoScreenState extends State<TopupSaldoScreen> {
           (row['transaction_status'] as String?) ?? status;
 
       if (transactionStatus == 'settlement' || transactionStatus == 'capture') {
+        AppCacheService.invalidateNasabahByEmail(_currentEmail);
         await _loadUserProfile();
+        final nasabahId = _nasabahId;
+        if (nasabahId != null) {
+          await _loadTopupHistory(nasabahId);
+        }
         _showSnack('Top up berhasil.');
       } else if (transactionStatus == 'pending') {
         _showSnack('Pembayaran masih pending.');
@@ -446,6 +648,8 @@ class _TopupSaldoScreenState extends State<TopupSaldoScreen> {
                             ),
                     ),
                   ),
+                  const SizedBox(height: 24),
+                  _topupHistorySection(),
                 ],
               ),
             ),
@@ -478,6 +682,219 @@ class _TopupSaldoScreenState extends State<TopupSaldoScreen> {
       ),
     );
   }
+
+  Widget _topupHistorySection() {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFD1D9D1), width: 1.2),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 12, 8, 8),
+            child: Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    'Riwayat Top Up',
+                    style: TextStyle(
+                      color: Color(0xFF333333),
+                      fontSize: 14,
+                      fontFamily: 'Roboto',
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: _loadingTopupHistory || _nasabahId == null
+                      ? null
+                      : () => _loadTopupHistory(_nasabahId!),
+                  icon: _loadingTopupHistory
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.refresh, size: 20),
+                  color: const Color(0xFF315A39),
+                  tooltip: 'Muat ulang',
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _loadingTopupHistory
+                      ? null
+                      : _pickTopupHistoryDate,
+                  icon: const Icon(Icons.calendar_today, size: 16),
+                  label: Text(
+                    _topupHistoryDate == null
+                        ? 'Pilih Tanggal'
+                        : _formatDateOnly(_topupHistoryDate!),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size(0, 36),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    side: const BorderSide(color: Color(0xFF315A39)),
+                  ),
+                ),
+                if (_topupHistoryDate != null)
+                  TextButton.icon(
+                    onPressed: _loadingTopupHistory
+                        ? null
+                        : _clearTopupHistoryDate,
+                    icon: const Icon(Icons.close, size: 16),
+                    label: const Text('Reset'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: const Color(0xFF666666),
+                      minimumSize: const Size(0, 36),
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          if (_loadingTopupHistory && _topupHistory.isEmpty)
+            const Padding(
+              padding: EdgeInsets.fromLTRB(14, 4, 14, 16),
+              child: Text(
+                'Memuat riwayat top up...',
+                style: TextStyle(
+                  color: Color(0xFF777777),
+                  fontSize: 12,
+                  fontFamily: 'Roboto',
+                ),
+              ),
+            )
+          else if (_topupHistory.isEmpty)
+            const Padding(
+              padding: EdgeInsets.fromLTRB(14, 4, 14, 16),
+              child: Text(
+                'Belum ada riwayat top up.',
+                style: TextStyle(
+                  color: Color(0xFF777777),
+                  fontSize: 12,
+                  fontFamily: 'Roboto',
+                ),
+              ),
+            )
+          else
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: DataTable(
+                border: TableBorder.all(
+                  color: const Color(0xFFCAD4CA),
+                  width: 1,
+                  borderRadius: BorderRadius.circular(0),
+                ),
+                dividerThickness: 1.2,
+                headingRowColor: WidgetStateProperty.all(
+                  const Color(0xFFF4F8F4),
+                ),
+                headingRowHeight: 38,
+                dataRowMinHeight: 44,
+                dataRowMaxHeight: 52,
+                columnSpacing: 18,
+                horizontalMargin: 14,
+                columns: const [
+                  DataColumn(label: Text('Tanggal')),
+                  DataColumn(label: Text('Nominal')),
+                  DataColumn(label: Text('Status')),
+                  DataColumn(label: Text('Order')),
+                ],
+                rows: _topupHistory.map((item) {
+                  return DataRow(
+                    cells: [
+                      DataCell(Text(item.date)),
+                      DataCell(Text(item.amount)),
+                      DataCell(_statusBadge(item.status)),
+                      DataCell(Text(item.orderId)),
+                    ],
+                  );
+                }).toList(),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _statusBadge(String status) {
+    final normalized = status.toLowerCase();
+    final color =
+        normalized == 'settlement' ||
+            normalized == 'capture' ||
+            normalized == 'success' ||
+            normalized == 'paid'
+        ? const Color(0xFF2E7D32)
+        : normalized == 'pending'
+        ? const Color(0xFFB26A00)
+        : const Color(0xFFB3261E);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        _statusLabel(status),
+        style: TextStyle(
+          color: color,
+          fontSize: 12,
+          fontFamily: 'Roboto',
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
+  String _statusLabel(String status) {
+    switch (status.toLowerCase()) {
+      case 'settlement':
+      case 'capture':
+      case 'success':
+      case 'paid':
+        return 'Berhasil';
+      case 'pending':
+        return 'Pending';
+      case 'expire':
+      case 'expired':
+        return 'Kedaluwarsa';
+      case 'cancel':
+      case 'deny':
+      case 'failure':
+      case 'failed':
+        return 'Gagal';
+      default:
+        return status.isEmpty ? '-' : status;
+    }
+  }
+}
+
+class TopupHistoryItem {
+  const TopupHistoryItem({
+    required this.date,
+    required this.amount,
+    required this.status,
+    required this.orderId,
+  });
+
+  final String date;
+  final String amount;
+  final String status;
+  final String orderId;
 }
 
 class TopupExternalPaymentScreen extends StatelessWidget {

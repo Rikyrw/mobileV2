@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:mob_2/services/greenpoint_api_service.dart';
@@ -172,8 +173,7 @@ class FirebaseAccountService {
       return userCredential;
     }
 
-    final googleSignIn = _buildGoogleSignIn();
-    final googleUser = await googleSignIn.signIn();
+    final googleUser = await _signInWithGoogleAccount();
 
     if (googleUser == null) {
       return null;
@@ -206,6 +206,30 @@ class FirebaseAccountService {
     }
 
     return userCredential;
+  }
+
+  static Future<GoogleSignInAccount?> _signInWithGoogleAccount() async {
+    try {
+      return await _buildGoogleSignIn().signIn();
+    } on PlatformException catch (error) {
+      if (!_isGoogleDeveloperError(error)) {
+        throw _googlePlatformError(error);
+      }
+
+      debugPrint(
+        'Google Sign-In retried without serverClientId after ApiException: 10.',
+      );
+
+      try {
+        await _buildGoogleSignIn(useServerClientId: false).signOut();
+      } catch (_) {}
+
+      try {
+        return await _buildGoogleSignIn(useServerClientId: false).signIn();
+      } on PlatformException catch (retryError) {
+        throw _googlePlatformError(retryError);
+      }
+    }
   }
 
   static Future<Map<String, dynamic>?> currentUserProfile() async {
@@ -279,6 +303,9 @@ class FirebaseAccountService {
           return 'GOOGLE_CLIENT_ID belum diset untuk login Google di web.';
         case 'missing-google-token':
           return error.message ?? 'Token Google tidak diterima.';
+        case 'google-developer-error':
+          return error.message ??
+              'Konfigurasi login Google belum cocok. Cek package name dan SHA-1/SHA-256 di Firebase.';
         case 'missing-firebase-config':
           return error.message ?? _firebaseConfigMessage;
         case 'reset-email-sent':
@@ -332,6 +359,10 @@ class FirebaseAccountService {
       }
 
       return error.message ?? 'Login Google gagal.';
+    }
+
+    if (error is PlatformException) {
+      return _googlePlatformError(error).message ?? 'Login Google gagal.';
     }
 
     return error.toString();
@@ -518,7 +549,7 @@ class FirebaseAccountService {
       final client = Supabase.instance.client;
       final existing = await client
           .from('nasabah')
-          .select('id_nasabah')
+          .select('id_nasabah,saldo')
           .eq('email', email)
           .limit(1);
 
@@ -546,7 +577,19 @@ class FirebaseAccountService {
       payload.removeWhere((key, value) => value == null);
 
       if (existing.isNotEmpty) {
-        await client.from('nasabah').update(payload).eq('email', email);
+        final existingProfile = Map<String, dynamic>.from(existing.first);
+        final currentBalance = existingProfile['saldo'] as num?;
+        final profilePayload = Map<String, dynamic>.from(payload)
+          ..remove('saldo');
+
+        // Saldo adalah data transaksi di Supabase; jangan timpa dengan
+        // saldo lama dari Firestore saat mirror profil berjalan.
+        await client.from('nasabah').update(profilePayload).eq('email', email);
+        if (currentBalance != null) {
+          await _users.doc(user.uid).set({
+            'saldo': currentBalance,
+          }, SetOptions(merge: true));
+        }
         return;
       }
 
@@ -799,7 +842,10 @@ class FirebaseAccountService {
     return googleId == null && _text(record['email_verified_at']) == null;
   }
 
-  static GoogleSignIn _buildGoogleSignIn({bool requireWebClientId = true}) {
+  static GoogleSignIn _buildGoogleSignIn({
+    bool requireWebClientId = true,
+    bool useServerClientId = true,
+  }) {
     const scopes = <String>['email', 'profile'];
     final clientId = dotenv.env['GOOGLE_CLIENT_ID']?.trim();
 
@@ -814,11 +860,36 @@ class FirebaseAccountService {
       return GoogleSignIn(clientId: clientId, scopes: scopes);
     }
 
-    if (clientId != null && clientId.isNotEmpty) {
+    if (useServerClientId && clientId != null && clientId.isNotEmpty) {
       return GoogleSignIn(scopes: scopes, serverClientId: clientId);
     }
 
     return GoogleSignIn(scopes: scopes);
+  }
+
+  static bool _isGoogleDeveloperError(PlatformException error) {
+    final text = '${error.code} ${error.message} ${error.details}';
+    return text.contains('ApiException: 10') ||
+        text.contains('DEVELOPER_ERROR');
+  }
+
+  static FirebaseAuthException _googlePlatformError(PlatformException error) {
+    if (_isGoogleDeveloperError(error)) {
+      return FirebaseAuthException(
+        code: 'google-developer-error',
+        message:
+            'Konfigurasi login Google belum cocok. Tambahkan SHA-1/SHA-256 aplikasi ini ke Firebase, aktifkan provider Google, lalu unduh ulang konfigurasi.',
+      );
+    }
+
+    if (error.code == 'sign_in_canceled') {
+      return FirebaseAuthException(code: 'popup-closed-by-user');
+    }
+
+    return FirebaseAuthException(
+      code: error.code,
+      message: error.message ?? 'Login Google gagal.',
+    );
   }
 
   static String? _text(Object? value) {

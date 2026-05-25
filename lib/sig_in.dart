@@ -3,6 +3,7 @@ import 'email_verification_notice.dart';
 import 'services/firebase_account_service.dart';
 import 'services/greenpoint_api_service.dart';
 import 'sign_up.dart';
+import 'widgets/google_auth_button.dart';
 
 class SignInScreen extends StatefulWidget {
   const SignInScreen({super.key});
@@ -27,6 +28,8 @@ class _SignInScreenState extends State<SignInScreen> {
   }
 
   Future<void> _signIn() async {
+    FocusManager.instance.primaryFocus?.unfocus();
+
     final identifier = _emailController.text.trim();
     final password = _passwordController.text;
     if (identifier.isEmpty || password.isEmpty) {
@@ -79,6 +82,8 @@ class _SignInScreenState extends State<SignInScreen> {
   }
 
   Future<void> _sendPasswordReset() async {
+    FocusManager.instance.primaryFocus?.unfocus();
+
     final identifier = _emailController.text.trim();
 
     if (identifier.isEmpty) {
@@ -123,7 +128,7 @@ class _SignInScreenState extends State<SignInScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: const Color(0xFFFBFCFB),
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
@@ -181,6 +186,7 @@ class _SignInScreenState extends State<SignInScreen> {
                         child: TextField(
                           controller: _emailController,
                           keyboardType: TextInputType.emailAddress,
+                          textInputAction: TextInputAction.next,
                           style: const TextStyle(
                             color: Colors.black,
                             fontSize: 14,
@@ -189,7 +195,7 @@ class _SignInScreenState extends State<SignInScreen> {
                           decoration: const InputDecoration(
                             hintText: 'Email or Username',
                             hintStyle: TextStyle(
-                              color: Color(0xFF2D2525),
+                              color: Color(0xFF7A867E),
                               fontSize: 14,
                               fontFamily: 'Roboto',
                             ),
@@ -203,6 +209,10 @@ class _SignInScreenState extends State<SignInScreen> {
                         child: TextField(
                           controller: _passwordController,
                           obscureText: _obscurePassword,
+                          textInputAction: TextInputAction.done,
+                          onSubmitted: (_) {
+                            if (!_loading) _signIn();
+                          },
                           style: const TextStyle(
                             color: Colors.black,
                             fontSize: 14,
@@ -211,7 +221,7 @@ class _SignInScreenState extends State<SignInScreen> {
                           decoration: InputDecoration(
                             hintText: 'Password (min. 8 characters)',
                             hintStyle: const TextStyle(
-                              color: Colors.black,
+                              color: Color(0xFF7A867E),
                               fontSize: 14,
                               fontFamily: 'Roboto',
                             ),
@@ -253,7 +263,7 @@ class _SignInScreenState extends State<SignInScreen> {
                         child: TextButton(
                           onPressed: _resetLoading ? null : _sendPasswordReset,
                           style: TextButton.styleFrom(
-                            foregroundColor: Colors.black,
+                            foregroundColor: const Color(0xFF315A39),
                             padding: EdgeInsets.zero,
                             minimumSize: Size.zero,
                             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -264,12 +274,13 @@ class _SignInScreenState extends State<SignInScreen> {
                                   height: 16,
                                   child: CircularProgressIndicator(
                                     strokeWidth: 2,
+                                    color: Color(0xFF315A39),
                                   ),
                                 )
                               : const Text(
                                   'Lupa Password?',
                                   style: TextStyle(
-                                    color: Colors.black,
+                                    color: Color(0xFF315A39),
                                     fontSize: 14,
                                     fontWeight: FontWeight.w700,
                                     fontFamily: 'Roboto',
@@ -280,7 +291,7 @@ class _SignInScreenState extends State<SignInScreen> {
                       const SizedBox(height: 10),
                       SizedBox(
                         width: double.infinity,
-                        height: 48,
+                        height: 50,
                         child: ElevatedButton(
                           onPressed: _loading ? null : _signIn,
                           style: ElevatedButton.styleFrom(
@@ -288,7 +299,7 @@ class _SignInScreenState extends State<SignInScreen> {
                             foregroundColor: Colors.white,
                             elevation: 0,
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(4),
+                              borderRadius: BorderRadius.circular(10),
                             ),
                           ),
                           child: _loading
@@ -310,8 +321,7 @@ class _SignInScreenState extends State<SignInScreen> {
                                 ),
                         ),
                       ),
-                      const SizedBox(height: 12),
-                      const SizedBox(height: 30),
+                      const SizedBox(height: 24),
                       Align(
                         alignment: Alignment.centerRight,
                         child: Padding(
@@ -350,13 +360,10 @@ class _SignInScreenState extends State<SignInScreen> {
                         ),
                       ),
                       const SizedBox(height: 20),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 55,
-                        child: _buildGoogleButton(
-                          label: 'Masuk dengan Google',
-                          onTap: _googleLoading ? null : _signInWithGoogle,
-                        ),
+                      GoogleAuthButton(
+                        label: 'Masuk dengan Google',
+                        isLoading: _googleLoading,
+                        onTap: _googleLoading ? null : _signInWithGoogle,
                       ),
                       const SizedBox(height: 40),
                     ],
@@ -375,64 +382,17 @@ class _SignInScreenState extends State<SignInScreen> {
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFDADADA)),
+        color: const Color(0xFFFFFFFF),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE1E8E1)),
       ),
       child: child,
     );
   }
 
-  Widget _buildGoogleButton({required String label, VoidCallback? onTap}) {
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        width: double.infinity,
-        height: 55,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: const Color.fromARGB(255, 0, 0, 0)),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Image.asset(
-              'assets/google.png',
-              width: 24,
-              height: 24,
-              errorBuilder: (context, error, stackTrace) {
-                return const Icon(
-                  Icons.account_circle,
-                  size: 24,
-                  color: Color(0xFF4285F4),
-                );
-              },
-            ),
-            const SizedBox(width: 8),
-            Text(
-              label,
-              style: const TextStyle(
-                color: Color(0xFF333333),
-                fontSize: 14,
-                fontFamily: 'Roboto',
-              ),
-            ),
-            if (_googleLoading) ...[
-              const SizedBox(width: 8),
-              const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
   Future<void> _signInWithGoogle() async {
+    FocusManager.instance.primaryFocus?.unfocus();
+
     setState(() {
       _googleLoading = true;
     });

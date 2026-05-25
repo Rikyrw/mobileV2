@@ -3,6 +3,7 @@ import 'package:mob_2/email_verification_notice.dart';
 import 'package:mob_2/sig_in.dart';
 import 'package:mob_2/services/firebase_account_service.dart';
 import 'package:mob_2/services/greenpoint_api_service.dart';
+import 'package:mob_2/widgets/google_auth_button.dart';
 
 class SignUpScreen extends StatefulWidget {
   const SignUpScreen({super.key});
@@ -28,7 +29,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: const Color(0xFFFBFCFB),
       body: SafeArea(
         child: LayoutBuilder(
           builder: (context, constraints) {
@@ -36,7 +37,9 @@ class _SignUpScreenState extends State<SignUpScreen> {
               padding: const EdgeInsets.all(32),
               child: ConstrainedBox(
                 constraints: BoxConstraints(
-                  minHeight: constraints.maxHeight - 64,
+                  minHeight: (constraints.maxHeight - 64) < 0
+                      ? 0
+                      : (constraints.maxHeight - 64),
                 ),
                 child: Container(
                   width: double.infinity,
@@ -93,7 +96,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                           decoration: const InputDecoration(
                             hintText: 'Nama Lengkap',
                             hintStyle: TextStyle(
-                              color: Color(0xFF2D2525),
+                              color: Color(0xFF7A867E),
                               fontSize: 14,
                               fontFamily: 'Roboto',
                             ),
@@ -116,7 +119,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                           decoration: const InputDecoration(
                             hintText: 'Username',
                             hintStyle: TextStyle(
-                              color: Color(0xFF2D2525),
+                              color: Color(0xFF7A867E),
                               fontSize: 14,
                               fontFamily: 'Roboto',
                             ),
@@ -139,7 +142,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                           decoration: const InputDecoration(
                             hintText: 'Email',
                             hintStyle: TextStyle(
-                              color: Color(0xFF2D2525),
+                              color: Color(0xFF7A867E),
                               fontSize: 14,
                               fontFamily: 'Roboto',
                             ),
@@ -162,7 +165,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                           decoration: const InputDecoration(
                             hintText: 'Alamat',
                             hintStyle: TextStyle(
-                              color: Color(0xFF2D2525),
+                              color: Color(0xFF7A867E),
                               fontSize: 14,
                               fontFamily: 'Roboto',
                             ),
@@ -185,7 +188,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                           decoration: const InputDecoration(
                             hintText: 'Nomor Telepon',
                             hintStyle: TextStyle(
-                              color: Color(0xFF2D2525),
+                              color: Color(0xFF7A867E),
                               fontSize: 14,
                               fontFamily: 'Roboto',
                             ),
@@ -208,7 +211,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                           decoration: InputDecoration(
                             hintText: 'Password (min. 8 characters)',
                             hintStyle: const TextStyle(
-                              color: Color(0xFF2D2525),
+                              color: Color(0xFF7A867E),
                               fontSize: 14,
                               fontFamily: 'Roboto',
                             ),
@@ -251,6 +254,9 @@ class _SignUpScreenState extends State<SignUpScreen> {
                           controller: _confirmPasswordController,
                           obscureText: _obscureConfirmPassword,
                           textInputAction: TextInputAction.done,
+                          onSubmitted: (_) {
+                            if (!_creating) _signUp();
+                          },
                           style: const TextStyle(
                             color: Colors.black,
                             fontSize: 14,
@@ -259,7 +265,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                           decoration: InputDecoration(
                             hintText: 'Confirm Password',
                             hintStyle: const TextStyle(
-                              color: Color(0xFF2D2525),
+                              color: Color(0xFF7A867E),
                               fontSize: 14,
                               fontFamily: 'Roboto',
                             ),
@@ -300,7 +306,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                       const SizedBox.shrink(),
                       SizedBox(
                         width: double.infinity,
-                        height: 48,
+                        height: 50,
                         child: ElevatedButton(
                           onPressed: _creating ? null : _signUp,
                           style: ElevatedButton.styleFrom(
@@ -308,7 +314,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                             foregroundColor: Colors.white,
                             elevation: 0,
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(4),
+                              borderRadius: BorderRadius.circular(10),
                             ),
                           ),
                           child: _creating
@@ -367,13 +373,10 @@ class _SignUpScreenState extends State<SignUpScreen> {
                         ),
                       ),
                       const SizedBox(height: 20),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 55,
-                        child: _buildGoogleButton(
-                          label: 'Daftar dengan Google',
-                          onTap: _googleLoading ? null : _signUpWithGoogle,
-                        ),
+                      GoogleAuthButton(
+                        label: 'Daftar dengan Google',
+                        isLoading: _googleLoading,
+                        onTap: _googleLoading ? null : _signUpWithGoogle,
                       ),
                       const SizedBox(height: 40),
                     ],
@@ -400,6 +403,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
   }
 
   Future<void> _signUp() async {
+    FocusManager.instance.primaryFocus?.unfocus();
+
     final fullName = _fullNameController.text.trim();
     final userName = _userNameController.text.trim();
     final email = _emailController.text.trim();
@@ -478,6 +483,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
   }
 
   Future<void> _signUpWithGoogle() async {
+    FocusManager.instance.primaryFocus?.unfocus();
+
     setState(() {
       _googleLoading = true;
     });
@@ -521,59 +528,10 @@ class _SignUpScreenState extends State<SignUpScreen> {
       margin: EdgeInsets.only(bottom: bottomMargin),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFDADADA)),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE1E8E1)),
       ),
       child: child,
-    );
-  }
-
-  Widget _buildGoogleButton({required String label, VoidCallback? onTap}) {
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        width: double.infinity,
-        height: 55,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: const Color.fromARGB(255, 0, 0, 0)),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Image.asset(
-              'assets/google.png',
-              width: 24,
-              height: 24,
-              errorBuilder: (context, error, stackTrace) {
-                return const Icon(
-                  Icons.account_circle,
-                  size: 24,
-                  color: Color(0xFF4285F4),
-                );
-              },
-            ),
-            const SizedBox(width: 8),
-            Text(
-              label,
-              style: const TextStyle(
-                color: Color(0xFF333333),
-                fontSize: 14,
-                fontFamily: 'Roboto',
-              ),
-            ),
-            if (_googleLoading) ...[
-              const SizedBox(width: 8),
-              const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2),
-              ),
-            ],
-          ],
-        ),
-      ),
     );
   }
 }
