@@ -1,0 +1,55 @@
+{
+  "project_info": {
+    "project_number": "174924940023",
+    "project_id": "greenpoint-d9611",
+    "storage_bucket": "greenpoint-d9611.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:174924940023:android:875c323c532a316ebd09f2",
+        "android_client_info": {
+          "package_name": "com.example.mob_2"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "174924940023-4d96epf84veagm9bar9mvv2u960p5tc2.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.mob_2",
+            "certificate_hash": "eb4e4bb3a10475d22175a0b15568d04b0c5f96a0"
+          }
+        },
+        {
+          "client_id": "174924940023-fbts69rd3olcem9i3dgprlq6ec9sfsva.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.mob_2",
+            "certificate_hash": "ae589d5c91712e5f9026b7ba76cd2f5736c0ef5a"
+          }
+        },
+        {
+          "client_id": "174924940023-b28hcrt5l453bnfg70moti7fcr0pdfsc.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAUj309BQ-WO468-vsHgFB0A45iEGy6_n0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "174924940023-b28hcrt5l453bnfg70moti7fcr0pdfsc.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
