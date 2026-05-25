@@ -15,6 +15,7 @@ import 'package:mob_2/splash_screen.dart';
 import 'package:mob_2/welcome_screen.dart';
 import 'package:mob_2/transaksi.dart';
 import 'package:mob_2/chatbot.dart';
+import 'package:mob_2/topup_saldo.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -94,6 +95,7 @@ class MyApp extends StatelessWidget {
         '/sig-in': (context) => const SignInScreen(),
         '/sign-up': (context) => const SignUpScreen(),
         '/chatbot': (context) => const ChatbotScreen(),
+        '/topup-saldo': (context) => const TopupSaldoScreen(),
       },
       home: const SplashScreen(),
     );

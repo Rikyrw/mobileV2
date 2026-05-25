@@ -509,6 +509,36 @@ class _ProfilScreenState extends State<ProfilScreen> {
                                     ),
                                   ),
                                 ),
+                                const SizedBox(height: 12),
+                                InkWell(
+                                  onTap: () {
+                                    Navigator.of(context).pushNamed(
+                                      '/topup-saldo',
+                                      arguments: {'email': _currentEmail},
+                                    );
+                                  },
+                                  child: Container(
+                                    width: double.infinity,
+                                    height: 45,
+                                    alignment: Alignment.center,
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                        color: const Color(0xFF315A39),
+                                      ),
+                                    ),
+                                    child: const Text(
+                                      'Top Up Saldo',
+                                      style: TextStyle(
+                                        color: Color(0xFF315A39),
+                                        fontSize: 14,
+                                        fontFamily: 'Roboto',
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                ),
                               ],
                             ),
                           ),
