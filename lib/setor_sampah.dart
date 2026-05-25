@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'services/app_cache_service.dart';
+
 class SetorSampahScreen extends StatefulWidget {
   const SetorSampahScreen({super.key});
 
@@ -68,14 +70,9 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
       _currentEmail = email;
 
       if (email != null && email.isNotEmpty) {
-        final res = await Supabase.instance.client
-            .from('nasabah')
-          .select('id_nasabah,nama_lengkap,user_name,email,alamat')
-            .eq('email', email)
-            .limit(1);
+        final record = await AppCacheService.fetchNasabahByEmail(email);
 
-        if (res.isNotEmpty) {
-          final record = res.first;
+        if (record != null) {
           final nasabahId = record['id_nasabah'] as int?;
           final fullName = record['nama_lengkap'] as String?;
           final userName = record['user_name'] as String?;
@@ -110,17 +107,9 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
     setState(() => _loadingWasteTypes = true);
 
     try {
-      final res = await Supabase.instance.client
-          .from('jenis_sampah')
-          .select('id_jenis_sampah, nama_jenis, harga_per_kg');
-
-      setState(() {
-        _wasteTypes = res.map((e) => {
-          'id': e['id_jenis_sampah'] as int,
-          'name': e['nama_jenis'] as String,
-          'price': (e['harga_per_kg'] as num).toDouble()
-        }).toList();
-      });
+      final res = await AppCacheService.fetchWasteTypes();
+      if (!mounted) return;
+      setState(() => _wasteTypes = res);
     } catch (e) {
       debugPrint('Error loading waste types: $e');
       ScaffoldMessenger.of(context).showSnackBar(
@@ -729,6 +718,7 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
       }).toList();
 
       await Supabase.instance.client.from('detail_setor').insert(detailRows);
+      AppCacheService.invalidateActivity();
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

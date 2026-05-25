@@ -2,20 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:mob_2/dashboard.dart';
+import 'package:mob_2/email_verification_notice.dart';
 import 'package:mob_2/emoney.dart';
+import 'package:mob_2/main_tab_scaffold.dart';
 import 'package:mob_2/pln.dart';
 import 'package:mob_2/pulsa.dart';
-import 'package:mob_2/profil.dart';
-import 'package:mob_2/riwayat.dart';
 import 'package:mob_2/setor_sampah.dart';
 import 'package:mob_2/sig_in.dart';
 import 'package:mob_2/sign_up.dart';
 import 'package:mob_2/splash_screen.dart';
-import 'package:mob_2/welcome_screen.dart';
-import 'package:mob_2/transaksi.dart';
-import 'package:mob_2/chatbot.dart';
 import 'package:mob_2/topup_saldo.dart';
+import 'package:mob_2/welcome_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -82,19 +79,97 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF315A39))
+            .copyWith(
+              primary: const Color(0xFF315A39),
+              secondary: const Color(0xFF6B8F71),
+              surface: Colors.white,
+            ),
+        scaffoldBackgroundColor: const Color(0xFFF7F8F7),
+        fontFamily: 'Roboto',
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Color(0xFF315A39),
+          foregroundColor: Colors.white,
+          centerTitle: false,
+          elevation: 0,
+          titleTextStyle: TextStyle(
+            color: Colors.white,
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+            fontFamily: 'Roboto',
+          ),
+        ),
+        elevatedButtonTheme: ElevatedButtonThemeData(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF315A39),
+            foregroundColor: Colors.white,
+            disabledBackgroundColor: const Color(0xFFD8DED8),
+            disabledForegroundColor: const Color(0xFF7A867E),
+            elevation: 0,
+            minimumSize: const Size.fromHeight(48),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        ),
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: const Color(0xFF315A39),
+            side: const BorderSide(color: Color(0xFF315A39)),
+            minimumSize: const Size.fromHeight(48),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+        ),
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: Colors.white,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 14,
+          ),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: Color(0xFFDDE4DD)),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: Color(0xFFDDE4DD)),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: Color(0xFF315A39), width: 1.5),
+          ),
+          hintStyle: const TextStyle(
+            color: Color(0xFF7A867E),
+            fontSize: 14,
+            fontWeight: FontWeight.w400,
+          ),
+        ),
+      ),
       routes: {
         '/welcome': (context) => const WelcomeScreen(),
-        '/dashboard': (context) => const DashboardScreen(),
-        '/profil': (context) => const ProfilScreen(),
-        '/transaksi': (context) => const TransaksiScreen(),
-        '/riwayat': (context) => const RiwayatScreen(),
+        '/dashboard': (context) =>
+            const MainTabScaffold(initialIndex: MainTabScaffold.homeIndex),
+        '/profil': (context) =>
+            const MainTabScaffold(initialIndex: MainTabScaffold.profilIndex),
+        '/transaksi': (context) =>
+            const MainTabScaffold(initialIndex: MainTabScaffold.transaksiIndex),
+        '/riwayat': (context) =>
+            const MainTabScaffold(initialIndex: MainTabScaffold.riwayatIndex),
         '/emoney': (context) => const EmoneyScreen(),
         '/pln': (context) => const PlnScreen(),
         '/pulsa': (context) => const PulsaScreen(),
         '/setor-sampah': (context) => const SetorSampahScreen(),
         '/sig-in': (context) => const SignInScreen(),
         '/sign-up': (context) => const SignUpScreen(),
-        '/chatbot': (context) => const ChatbotScreen(),
+        '/email-verification-notice': (context) =>
+            const EmailVerificationNoticeScreen(),
+        '/chatbot': (context) =>
+            const MainTabScaffold(initialIndex: MainTabScaffold.chatIndex),
         '/topup-saldo': (context) => const TopupSaldoScreen(),
       },
       home: const SplashScreen(),

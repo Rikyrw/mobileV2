@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'dashboard.dart';
+import 'services/app_cache_service.dart';
 
 class RiwayatScreen extends StatefulWidget {
   const RiwayatScreen({super.key});
@@ -11,6 +12,7 @@ class RiwayatScreen extends StatefulWidget {
 }
 
 class _RiwayatScreenState extends State<RiwayatScreen> {
+  static const int _pageSize = 8;
   static const _dummyData = RiwayatDummyData(
     greeting: 'Halo,',
     userName: 'Haidar Rais',
@@ -26,7 +28,6 @@ class _RiwayatScreenState extends State<RiwayatScreen> {
 
   String? _fetchedUserName;
   bool _loadingProfile = false;
-  String? _currentEmail;
   int? _nasabahId;
   bool _loadingRiwayat = false;
   List<Map<String, dynamic>> _riwayatItems = [];
@@ -34,6 +35,8 @@ class _RiwayatScreenState extends State<RiwayatScreen> {
   DateTime? _toDate;
   bool _hasSearched = false;
   bool _hasLoadedRiwayat = false;
+  int _currentPage = 0;
+  bool _hasNextPage = false;
 
   @override
   void initState() {
@@ -65,20 +68,16 @@ class _RiwayatScreenState extends State<RiwayatScreen> {
       // Prefer route argument, otherwise use auth currentUser
       final user = Supabase.instance.client.auth.currentUser;
       final email = emailArg ?? user?.email;
-      _currentEmail = email;
 
       if (email != null && email.isNotEmpty) {
-        final res = await Supabase.instance.client
-            .from('nasabah')
-            .select('id_nasabah,nama_lengkap,user_name,email')
-            .eq('email', email)
-            .limit(1);
+        final record = await AppCacheService.fetchNasabahByEmail(email);
 
-        if (res.isNotEmpty) {
-          final record = res.first;
+        if (record != null) {
           final nasabahId = record['id_nasabah'] as int?;
           setState(() {
-            _fetchedUserName = (record['nama_lengkap'] as String?) ?? (record['user_name'] as String?);
+            _fetchedUserName =
+                (record['nama_lengkap'] as String?) ??
+                (record['user_name'] as String?);
             _nasabahId = nasabahId;
           });
           if (nasabahId != null && !_hasLoadedRiwayat) {
@@ -93,57 +92,102 @@ class _RiwayatScreenState extends State<RiwayatScreen> {
     }
   }
 
-  Future<void> _loadRiwayat(int nasabahId, {DateTime? from, DateTime? to, bool pendingOnly = false}) async {
+  Future<void> _loadRiwayat(
+    int nasabahId, {
+    DateTime? from,
+    DateTime? to,
+    bool pendingOnly = false,
+    int page = 0,
+    bool forceRefresh = false,
+  }) async {
     if (_loadingRiwayat) return;
     setState(() => _loadingRiwayat = true);
 
     try {
-      final query = Supabase.instance.client
-          .from('transaksi_setor')
-          .select('id_transaksi_setor,total_nilai,tanggal_setor,status,detail_setor(berat_kg,harga_kg,subtotal,jenis_sampah(nama_jenis))')
-          .eq('id_nasabah', nasabahId);
-
-      if (pendingOnly) {
-        query.eq('status', 'pending');
-      } else if (from != null && to != null) {
-        final fromDate = _formatDateQuery(from);
-        final toDate = _formatDateQuery(to);
-        query.gte('tanggal_setor', fromDate).lte('tanggal_setor', toDate);
-      }
-
-      final res = await query.order('tanggal_setor', ascending: false);
+      final res = await AppCacheService.fetchSetorHistoryPage(
+        nasabahId: nasabahId,
+        page: page,
+        pageSize: _pageSize,
+        pendingOnly: pendingOnly,
+        from: pendingOnly ? null : from,
+        to: pendingOnly ? null : to,
+        forceRefresh: forceRefresh,
+      );
 
       setState(() {
-        _riwayatItems = res.map((e) => {
-          'id': e['id_transaksi_setor'] as int,
-          'total': (e['total_nilai'] as num).toDouble(),
-          'tanggal': e['tanggal_setor']?.toString(),
-          'status': e['status']?.toString() ?? '-',
-          'details': (e['detail_setor'] as List<dynamic>? ?? []).map((d) => {
-            'nama': (d['jenis_sampah']?['nama_jenis'] ?? '-').toString(),
-            'berat': (d['berat_kg'] as num?)?.toDouble() ?? 0.0,
-            'subtotal': (d['subtotal'] as num?)?.toDouble() ?? 0.0,
-          }).toList(),
-        }).toList();
+        _riwayatItems = res.items
+            .map(
+              (e) => {
+                'id': e['id_transaksi_setor'] as int,
+                'total': (e['total_nilai'] as num).toDouble(),
+                'tanggal': e['tanggal_setor']?.toString(),
+                'status': e['status']?.toString() ?? '-',
+                'details': (e['detail_setor'] as List<dynamic>? ?? [])
+                    .map(
+                      (d) => {
+                        'nama': (d['jenis_sampah']?['nama_jenis'] ?? '-')
+                            .toString(),
+                        'berat': (d['berat_kg'] as num?)?.toDouble() ?? 0.0,
+                        'subtotal': (d['subtotal'] as num?)?.toDouble() ?? 0.0,
+                      },
+                    )
+                    .toList(),
+              },
+            )
+            .toList();
+        _currentPage = page;
+        _hasNextPage = res.hasNextPage;
         _hasLoadedRiwayat = true;
       });
     } catch (e) {
       debugPrint('Load riwayat error: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Gagal memuat riwayat: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Gagal memuat riwayat: $e')));
       }
     } finally {
       if (mounted) setState(() => _loadingRiwayat = false);
     }
   }
 
+  void _loadPreviousPage() {
+    final nasabahId = _nasabahId;
+    if (nasabahId == null || _currentPage == 0) {
+      return;
+    }
+
+    _loadRiwayat(
+      nasabahId,
+      from: _hasSearched ? _fromDate : null,
+      to: _hasSearched ? _toDate : null,
+      pendingOnly: !_hasSearched,
+      page: _currentPage - 1,
+    );
+  }
+
+  void _loadNextPage() {
+    final nasabahId = _nasabahId;
+    if (nasabahId == null || !_hasNextPage) {
+      return;
+    }
+
+    _loadRiwayat(
+      nasabahId,
+      from: _hasSearched ? _fromDate : null,
+      to: _hasSearched ? _toDate : null,
+      pendingOnly: !_hasSearched,
+      page: _currentPage + 1,
+    );
+  }
+
   Future<void> _pickDate({required bool isFrom}) async {
     final now = DateTime.now();
     final lastAllowed = DateTime(now.year, now.month, now.day);
     final firstAllowed = lastAllowed.subtract(const Duration(days: 31));
-    final initial = isFrom ? (_fromDate ?? lastAllowed) : (_toDate ?? lastAllowed);
+    final initial = isFrom
+        ? (_fromDate ?? lastAllowed)
+        : (_toDate ?? lastAllowed);
 
     final picked = await showDatePicker(
       context: context,
@@ -212,478 +256,497 @@ class _RiwayatScreenState extends State<RiwayatScreen> {
   Widget build(BuildContext context) {
     final visibleItems = _hasSearched
         ? _riwayatItems
-        : _riwayatItems.where((item) => (item['status'] ?? '').toString().toLowerCase() == 'pending').toList();
-    final navItems = [
-      BottomNavigationItemConfig(
-        iconAsset: 'assets/home11.png',
-        label: 'Home',
-        isActive: false,
-        fallbackIcon: Icons.home,
-        onTap: () {
-          Navigator.of(context).pushReplacementNamed('/dashboard', arguments: {'email': _currentEmail});
-        },
-      ),
-      BottomNavigationItemConfig(
-        iconAsset: 'assets/riwayat1.png',
-        label: 'Transaksi',
-        isActive: false,
-        fallbackIcon: Icons.swap_horiz,
-        onTap: () {
-          Navigator.of(context).pushReplacementNamed('/transaksi', arguments: {'email': _currentEmail});
-        },
-      ),
-      BottomNavigationItemConfig(
-        iconAsset: 'assets/chat_ai.png',
-        label: 'Chat AI',
-        isActive: false,
-        fallbackIcon: Icons.smart_toy,
-        onTap: () {
-          Navigator.of(context).pushNamed('/chatbot');
-        },
-      ),
-      const BottomNavigationItemConfig(
-        iconAsset: 'assets/history.png',
-        label: 'Riwayat',
-        isActive: true,
-        fallbackIcon: Icons.history,
-      ),
-      BottomNavigationItemConfig(
-        iconAsset: 'assets/person.png',
-        label: 'Profil',
-        isActive: false,
-        fallbackIcon: Icons.person,
-        onTap: () {
-          Navigator.of(context).pushReplacementNamed('/profil', arguments: {'email': _currentEmail});
-        },
-      ),
-    ];
+        : _riwayatItems
+              .where(
+                (item) =>
+                    (item['status'] ?? '').toString().toLowerCase() ==
+                    'pending',
+              )
+              .toList();
 
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: Stack(
-        children: [
-          Positioned.fill(
-            bottom: 130,
-            child: SingleChildScrollView(
-              child: Container(
-                width: double.infinity,
-                color: Colors.white,
+    return ColoredBox(
+      color: Colors.white,
+      child: SingleChildScrollView(
+        child: Container(
+          width: double.infinity,
+          color: Colors.white,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(
+                padding: const EdgeInsetsDirectional.fromSTEB(20, 40, 20, 30),
+                decoration: const BoxDecoration(color: Color(0xFF315A39)),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      padding: const EdgeInsetsDirectional.fromSTEB(
-                        20,
-                        40,
-                        20,
-                        30,
-                      ),
-                      decoration: const BoxDecoration(color: Color(0xFF315A39)),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Opacity(
-                            opacity: 0.8,
-                            child: Text(
-                              _dummyData.greeting,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 16,
-                                fontFamily: 'Roboto',
-                                fontWeight: FontWeight.w400,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            _fetchedUserName ?? _dummyData.userName,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 24,
-                              fontFamily: 'Roboto',
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ],
+                    Opacity(
+                      opacity: 0.8,
+                      child: Text(
+                        _dummyData.greeting,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontFamily: 'Roboto',
+                          fontWeight: FontWeight.w400,
+                        ),
                       ),
                     ),
-                    Padding(
+                    const SizedBox(height: 4),
+                    Text(
+                      _fetchedUserName ?? _dummyData.userName,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 24,
+                        fontFamily: 'Roboto',
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _dummyData.title,
+                      style: const TextStyle(
+                        color: Color(0xFF333333),
+                        fontSize: 20,
+                        fontFamily: 'Roboto',
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _dummyData.subtitle,
+                      style: const TextStyle(
+                        color: Color(0xFF666666),
+                        fontSize: 14,
+                        fontFamily: 'Roboto',
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                    const SizedBox(height: 30),
+                    Container(
+                      width: double.infinity,
                       padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF6F7F8),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            _dummyData.title,
-                            style: const TextStyle(
+                          const Text(
+                            'Periode Mutasi',
+                            style: TextStyle(
                               color: Color(0xFF333333),
-                              fontSize: 20,
+                              fontSize: 16,
                               fontFamily: 'Roboto',
                               fontWeight: FontWeight.w700,
                             ),
                           ),
-                          const SizedBox(height: 8),
-                          Text(
-                            _dummyData.subtitle,
-                            style: const TextStyle(
+                          const SizedBox(height: 16),
+                          const Text(
+                            'Dari Tanggal:',
+                            style: TextStyle(
                               color: Color(0xFF666666),
                               fontSize: 14,
                               fontFamily: 'Roboto',
                               fontWeight: FontWeight.w400,
                             ),
                           ),
-                          const SizedBox(height: 30),
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(20),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF6F7F8),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'Periode Mutasi',
-                                  style: TextStyle(
-                                    color: Color(0xFF333333),
-                                    fontSize: 16,
-                                    fontFamily: 'Roboto',
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                                const SizedBox(height: 16),
-                                const Text(
-                                  'Dari Tanggal:',
-                                  style: TextStyle(
-                                    color: Color(0xFF666666),
-                                    fontSize: 14,
-                                    fontFamily: 'Roboto',
-                                    fontWeight: FontWeight.w400,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                _DateField(
-                                  value: _fromDate == null ? 'Pilih tanggal' : _formatDate(_formatDateQuery(_fromDate!)),
-                                  onTap: () => _pickDate(isFrom: true),
-                                ),
-                                const SizedBox(height: 16),
-                                const Text(
-                                  'Sampai Tanggal:',
-                                  style: TextStyle(
-                                    color: Color(0xFF666666),
-                                    fontSize: 14,
-                                    fontFamily: 'Roboto',
-                                    fontWeight: FontWeight.w400,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                _DateField(
-                                  value: _toDate == null ? 'Pilih tanggal' : _formatDate(_formatDateQuery(_toDate!)),
-                                  onTap: () => _pickDate(isFrom: false),
-                                ),
-                                const SizedBox(height: 20),
-                                Text(
-                                  _dummyData.note,
-                                  style: const TextStyle(
-                                    color: Color(0xFF666666),
-                                    fontSize: 12,
-                                    fontFamily: 'Roboto',
-                                    fontWeight: FontWeight.w400,
-                                    height: 1.35,
-                                  ),
-                                ),
-                              ],
+                          const SizedBox(height: 8),
+                          _DateField(
+                            value: _fromDate == null
+                                ? 'Pilih tanggal'
+                                : _formatDate(_formatDateQuery(_fromDate!)),
+                            onTap: () => _pickDate(isFrom: true),
+                          ),
+                          const SizedBox(height: 16),
+                          const Text(
+                            'Sampai Tanggal:',
+                            style: TextStyle(
+                              color: Color(0xFF666666),
+                              fontSize: 14,
+                              fontFamily: 'Roboto',
+                              fontWeight: FontWeight.w400,
                             ),
                           ),
-                          const SizedBox(height: 20),
-                          SizedBox(
-                            width: double.infinity,
-                            height: 50,
-                            child: ElevatedButton(
-                              onPressed: (_nasabahId == null || _fromDate == null || _toDate == null)
-                                  ? null
-                                  : () {
-                                      final from = _fromDate!;
-                                      final to = _toDate!;
-                                      if (!_validateRange(from, to)) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(content: Text('Periode mutasi maksimal 7 hari.')),
-                                        );
-                                        return;
-                                      }
-                                      setState(() => _hasSearched = true);
-                                      _loadRiwayat(_nasabahId!, from: from, to: to);
-                                    },
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF315A39),
-                                elevation: 0,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                              ),
-                              child: Text(
-                                _dummyData.buttonText,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                  fontFamily: 'Roboto',
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
+                          const SizedBox(height: 8),
+                          _DateField(
+                            value: _toDate == null
+                                ? 'Pilih tanggal'
+                                : _formatDate(_formatDateQuery(_toDate!)),
+                            onTap: () => _pickDate(isFrom: false),
                           ),
                           const SizedBox(height: 20),
-                          if (_loadingRiwayat)
-                            Padding(
-                              padding: const EdgeInsets.all(32),
-                              child: Center(
-                                child: Text(
-                                  _dummyData.emptyState,
-                                  textAlign: TextAlign.center,
-                                  style: const TextStyle(
-                                    color: Color(0xFF666666),
-                                    fontSize: 16,
-                                    fontFamily: 'Roboto',
-                                    fontWeight: FontWeight.w400,
-                                  ),
-                                ),
-                              ),
-                            )
-                          else if (!_hasSearched && visibleItems.isNotEmpty)
-                            Column(
-                              children: visibleItems.map((item) {
-                                final details = item['details'] as List<dynamic>? ?? [];
-                                return Container(
-                                  margin: const EdgeInsets.only(bottom: 12),
-                                  padding: const EdgeInsets.all(16),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: const Color(0xFFE0E0E0)),
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  _formatDate(item['tanggal'] as String?),
-                                                  style: const TextStyle(
-                                                    color: Color(0xFF333333),
-                                                    fontSize: 14,
-                                                    fontFamily: 'Roboto',
-                                                    fontWeight: FontWeight.w700,
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 6),
-                                                Text(
-                                                  'Total ${_formatRupiah((item['total'] as double).round())}',
-                                                  style: const TextStyle(
-                                                    color: Color(0xFF666666),
-                                                    fontSize: 12,
-                                                    fontFamily: 'Roboto',
-                                                    fontWeight: FontWeight.w400,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                          Text(
-                                            (item['status'] as String).toUpperCase(),
-                                            style: const TextStyle(
-                                              color: Color(0xFF315A39),
-                                              fontSize: 12,
-                                              fontFamily: 'Roboto',
-                                              fontWeight: FontWeight.w700,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      if (details.isNotEmpty) ...[
-                                        const SizedBox(height: 12),
-                                        Column(
-                                          children: details.map((d) {
-                                            final name = (d['nama'] ?? '-').toString();
-                                            final weight = d['berat'] as double? ?? 0.0;
-                                            final subtotal = d['subtotal'] as double? ?? 0.0;
-                                            return Padding(
-                                              padding: const EdgeInsets.only(bottom: 6),
-                                              child: Row(
-                                                children: [
-                                                  Expanded(
-                                                    child: Text(
-                                                      '$name - ${_formatWeight(weight)} kg',
-                                                      style: const TextStyle(
-                                                        color: Color(0xFF666666),
-                                                        fontSize: 12,
-                                                        fontFamily: 'Roboto',
-                                                        fontWeight: FontWeight.w400,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                  Text(
-                                                    _formatRupiah(subtotal.round()),
-                                                    style: const TextStyle(
-                                                      color: Color(0xFF333333),
-                                                      fontSize: 12,
-                                                      fontFamily: 'Roboto',
-                                                      fontWeight: FontWeight.w700,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            );
-                                          }).toList(),
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                );
-                              }).toList(),
-                            )
-                          else if (!_hasSearched)
-                            const Padding(
-                              padding: EdgeInsets.all(32),
-                              child: Center(
-                                child: Text(
-                                  'Belum ada riwayat pending.',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    color: Color(0xFF666666),
-                                    fontSize: 16,
-                                    fontFamily: 'Roboto',
-                                    fontWeight: FontWeight.w400,
-                                  ),
-                                ),
-                              ),
-                            )
-                          else if (visibleItems.isEmpty)
-                            const Padding(
-                              padding: EdgeInsets.all(32),
-                              child: Center(
-                                child: Text(
-                                  'Belum ada riwayat setor sampah.',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    color: Color(0xFF666666),
-                                    fontSize: 16,
-                                    fontFamily: 'Roboto',
-                                    fontWeight: FontWeight.w400,
-                                  ),
-                                ),
-                              ),
-                            )
-                          else
-                            Column(
-                              children: visibleItems.map((item) {
-                                final details = item['details'] as List<dynamic>? ?? [];
-                                return Container(
-                                  margin: const EdgeInsets.only(bottom: 12),
-                                  padding: const EdgeInsets.all(16),
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: const Color(0xFFE0E0E0)),
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  _formatDate(item['tanggal'] as String?),
-                                                  style: const TextStyle(
-                                                    color: Color(0xFF333333),
-                                                    fontSize: 14,
-                                                    fontFamily: 'Roboto',
-                                                    fontWeight: FontWeight.w700,
-                                                  ),
-                                                ),
-                                                const SizedBox(height: 6),
-                                                Text(
-                                                  'Total ${_formatRupiah((item['total'] as double).round())}',
-                                                  style: const TextStyle(
-                                                    color: Color(0xFF666666),
-                                                    fontSize: 12,
-                                                    fontFamily: 'Roboto',
-                                                    fontWeight: FontWeight.w400,
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
-                                          ),
-                                          Text(
-                                            (item['status'] as String).toUpperCase(),
-                                            style: const TextStyle(
-                                              color: Color(0xFF315A39),
-                                              fontSize: 12,
-                                              fontFamily: 'Roboto',
-                                              fontWeight: FontWeight.w700,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      if (details.isNotEmpty) ...[
-                                        const SizedBox(height: 12),
-                                        Column(
-                                          children: details.map((d) {
-                                            final name = (d['nama'] ?? '-').toString();
-                                            final weight = d['berat'] as double? ?? 0.0;
-                                            final subtotal = d['subtotal'] as double? ?? 0.0;
-                                            return Padding(
-                                              padding: const EdgeInsets.only(bottom: 6),
-                                              child: Row(
-                                                children: [
-                                                  Expanded(
-                                                    child: Text(
-                                                      '$name - ${_formatWeight(weight)} kg',
-                                                      style: const TextStyle(
-                                                        color: Color(0xFF666666),
-                                                        fontSize: 12,
-                                                        fontFamily: 'Roboto',
-                                                        fontWeight: FontWeight.w400,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                  Text(
-                                                    _formatRupiah(subtotal.round()),
-                                                    style: const TextStyle(
-                                                      color: Color(0xFF333333),
-                                                      fontSize: 12,
-                                                      fontFamily: 'Roboto',
-                                                      fontWeight: FontWeight.w700,
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                            );
-                                          }).toList(),
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                );
-                              }).toList(),
+                          Text(
+                            _dummyData.note,
+                            style: const TextStyle(
+                              color: Color(0xFF666666),
+                              fontSize: 12,
+                              fontFamily: 'Roboto',
+                              fontWeight: FontWeight.w400,
+                              height: 1.35,
                             ),
-                          const SizedBox(height: 80),
+                          ),
                         ],
                       ),
                     ),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton(
+                        onPressed:
+                            (_nasabahId == null ||
+                                _fromDate == null ||
+                                _toDate == null)
+                            ? null
+                            : () {
+                                final from = _fromDate!;
+                                final to = _toDate!;
+                                if (!_validateRange(from, to)) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Periode mutasi maksimal 7 hari.',
+                                      ),
+                                    ),
+                                  );
+                                  return;
+                                }
+                                setState(() {
+                                  _hasSearched = true;
+                                  _currentPage = 0;
+                                  _hasNextPage = false;
+                                });
+                                _loadRiwayat(
+                                  _nasabahId!,
+                                  from: from,
+                                  to: to,
+                                  page: 0,
+                                );
+                              },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF315A39),
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        child: Text(
+                          _dummyData.buttonText,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontFamily: 'Roboto',
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    if (_loadingRiwayat)
+                      Padding(
+                        padding: const EdgeInsets.all(32),
+                        child: Center(
+                          child: Text(
+                            _dummyData.emptyState,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Color(0xFF666666),
+                              fontSize: 16,
+                              fontFamily: 'Roboto',
+                              fontWeight: FontWeight.w400,
+                            ),
+                          ),
+                        ),
+                      )
+                    else if (!_hasSearched && visibleItems.isNotEmpty)
+                      Column(
+                        children:
+                            visibleItems.map<Widget>((item) {
+                              final details =
+                                  item['details'] as List<dynamic>? ?? [];
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 12),
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: const Color(0xFFE0E0E0),
+                                  ),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                _formatDate(
+                                                  item['tanggal'] as String?,
+                                                ),
+                                                style: const TextStyle(
+                                                  color: Color(0xFF333333),
+                                                  fontSize: 14,
+                                                  fontFamily: 'Roboto',
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 6),
+                                              Text(
+                                                'Total ${_formatRupiah((item['total'] as double).round())}',
+                                                style: const TextStyle(
+                                                  color: Color(0xFF666666),
+                                                  fontSize: 12,
+                                                  fontFamily: 'Roboto',
+                                                  fontWeight: FontWeight.w400,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        Text(
+                                          (item['status'] as String)
+                                              .toUpperCase(),
+                                          style: const TextStyle(
+                                            color: Color(0xFF315A39),
+                                            fontSize: 12,
+                                            fontFamily: 'Roboto',
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    if (details.isNotEmpty) ...[
+                                      const SizedBox(height: 12),
+                                      Column(
+                                        children: details.map((d) {
+                                          final name = (d['nama'] ?? '-')
+                                              .toString();
+                                          final weight =
+                                              d['berat'] as double? ?? 0.0;
+                                          final subtotal =
+                                              d['subtotal'] as double? ?? 0.0;
+                                          return Padding(
+                                            padding: const EdgeInsets.only(
+                                              bottom: 6,
+                                            ),
+                                            child: Row(
+                                              children: [
+                                                Expanded(
+                                                  child: Text(
+                                                    '$name - ${_formatWeight(weight)} kg',
+                                                    style: const TextStyle(
+                                                      color: Color(0xFF666666),
+                                                      fontSize: 12,
+                                                      fontFamily: 'Roboto',
+                                                      fontWeight:
+                                                          FontWeight.w400,
+                                                    ),
+                                                  ),
+                                                ),
+                                                Text(
+                                                  _formatRupiah(
+                                                    subtotal.round(),
+                                                  ),
+                                                  style: const TextStyle(
+                                                    color: Color(0xFF333333),
+                                                    fontSize: 12,
+                                                    fontFamily: 'Roboto',
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                        }).toList(),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              );
+                            }).toList()..addAll([
+                              if (_currentPage > 0 || _hasNextPage)
+                                PaginationControls(
+                                  currentPage: _currentPage,
+                                  hasNextPage: _hasNextPage,
+                                  isLoading: _loadingRiwayat,
+                                  onPrevious: _loadPreviousPage,
+                                  onNext: _loadNextPage,
+                                ),
+                            ]),
+                      )
+                    else if (!_hasSearched)
+                      const Padding(
+                        padding: EdgeInsets.all(32),
+                        child: Center(
+                          child: Text(
+                            'Belum ada riwayat pending.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Color(0xFF666666),
+                              fontSize: 16,
+                              fontFamily: 'Roboto',
+                              fontWeight: FontWeight.w400,
+                            ),
+                          ),
+                        ),
+                      )
+                    else if (visibleItems.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.all(32),
+                        child: Center(
+                          child: Text(
+                            'Belum ada riwayat setor sampah.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Color(0xFF666666),
+                              fontSize: 16,
+                              fontFamily: 'Roboto',
+                              fontWeight: FontWeight.w400,
+                            ),
+                          ),
+                        ),
+                      )
+                    else
+                      Column(
+                        children:
+                            visibleItems.map<Widget>((item) {
+                              final details =
+                                  item['details'] as List<dynamic>? ?? [];
+                              return Container(
+                                margin: const EdgeInsets.only(bottom: 12),
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(
+                                    color: const Color(0xFFE0E0E0),
+                                  ),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                _formatDate(
+                                                  item['tanggal'] as String?,
+                                                ),
+                                                style: const TextStyle(
+                                                  color: Color(0xFF333333),
+                                                  fontSize: 14,
+                                                  fontFamily: 'Roboto',
+                                                  fontWeight: FontWeight.w700,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 6),
+                                              Text(
+                                                'Total ${_formatRupiah((item['total'] as double).round())}',
+                                                style: const TextStyle(
+                                                  color: Color(0xFF666666),
+                                                  fontSize: 12,
+                                                  fontFamily: 'Roboto',
+                                                  fontWeight: FontWeight.w400,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        Text(
+                                          (item['status'] as String)
+                                              .toUpperCase(),
+                                          style: const TextStyle(
+                                            color: Color(0xFF315A39),
+                                            fontSize: 12,
+                                            fontFamily: 'Roboto',
+                                            fontWeight: FontWeight.w700,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    if (details.isNotEmpty) ...[
+                                      const SizedBox(height: 12),
+                                      Column(
+                                        children: details.map((d) {
+                                          final name = (d['nama'] ?? '-')
+                                              .toString();
+                                          final weight =
+                                              d['berat'] as double? ?? 0.0;
+                                          final subtotal =
+                                              d['subtotal'] as double? ?? 0.0;
+                                          return Padding(
+                                            padding: const EdgeInsets.only(
+                                              bottom: 6,
+                                            ),
+                                            child: Row(
+                                              children: [
+                                                Expanded(
+                                                  child: Text(
+                                                    '$name - ${_formatWeight(weight)} kg',
+                                                    style: const TextStyle(
+                                                      color: Color(0xFF666666),
+                                                      fontSize: 12,
+                                                      fontFamily: 'Roboto',
+                                                      fontWeight:
+                                                          FontWeight.w400,
+                                                    ),
+                                                  ),
+                                                ),
+                                                Text(
+                                                  _formatRupiah(
+                                                    subtotal.round(),
+                                                  ),
+                                                  style: const TextStyle(
+                                                    color: Color(0xFF333333),
+                                                    fontSize: 12,
+                                                    fontFamily: 'Roboto',
+                                                    fontWeight: FontWeight.w700,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          );
+                                        }).toList(),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                              );
+                            }).toList()..addAll([
+                              if (_currentPage > 0 || _hasNextPage)
+                                PaginationControls(
+                                  currentPage: _currentPage,
+                                  hasNextPage: _hasNextPage,
+                                  isLoading: _loadingRiwayat,
+                                  onPrevious: _loadPreviousPage,
+                                  onNext: _loadNextPage,
+                                ),
+                            ]),
+                      ),
+                    const SizedBox(height: 80),
                   ],
                 ),
               ),
-            ),
+            ],
           ),
-          DashboardBottomNavigation(items: navItems),
-        ],
+        ),
       ),
     );
   }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'dashboard.dart';
+import 'services/app_cache_service.dart';
 
 class PlnScreen extends StatefulWidget {
   const PlnScreen({super.key});
@@ -64,14 +65,9 @@ class _PlnScreenState extends State<PlnScreen> {
       _currentEmail = email;
 
       if (email != null && email.isNotEmpty) {
-        final res = await Supabase.instance.client
-          .from('nasabah')
-          .select('id_nasabah,nama_lengkap,user_name,email,saldo')
-          .eq('email', email)
-          .limit(1);
+        final record = await AppCacheService.fetchNasabahByEmail(email);
 
-        if (res.isNotEmpty) {
-          final record = res.first;
+        if (record != null) {
           final saldoValue = (record['saldo'] as num?)?.toDouble();
           setState(() {
             _fetchedUserName = (record['nama_lengkap'] as String?) ?? (record['user_name'] as String?);
@@ -145,6 +141,7 @@ class _PlnScreenState extends State<PlnScreen> {
         'tanggal_pengajuan': today,
         'deskripsi': 'pln:$noToken',
       });
+      AppCacheService.invalidateActivity();
 
       if (mounted) {
         setState(() {

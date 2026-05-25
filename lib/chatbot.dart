@@ -5,7 +5,9 @@ import 'package:mob_2/services/chatbot_knowledge_base.dart';
 import 'package:mob_2/services/groq_service.dart';
 
 class ChatbotScreen extends StatefulWidget {
-  const ChatbotScreen({super.key});
+  const ChatbotScreen({super.key, this.onBack});
+
+  final VoidCallback? onBack;
 
   @override
   State<ChatbotScreen> createState() => _ChatbotScreenState();
@@ -434,14 +436,20 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _background,
-      appBar: _buildAppBar(),
-      body: Column(
+    return ColoredBox(
+      color: _background,
+      child: Column(
         children: [
-          Expanded(child: _buildMessageList()),
-          if (_isLoading) _buildTypingIndicator(),
-          _buildInputBar(),
+          _buildAppBar(),
+          Expanded(
+            child: Column(
+              children: [
+                Expanded(child: _buildMessageList()),
+                if (_isLoading) _buildTypingIndicator(),
+                _buildInputBar(),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -463,7 +471,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
               children: [
                 _HeaderButton(
                   icon: Icons.arrow_back_ios_new_rounded,
-                  onTap: () => Navigator.of(context).pop(),
+                  onTap: widget.onBack ?? () => Navigator.of(context).pop(),
                 ),
                 const SizedBox(width: 12),
                 Container(
@@ -492,7 +500,7 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                           color: _text,
                           fontSize: 16,
                           fontWeight: FontWeight.w700,
-                          letterSpacing: -0.2,
+                          letterSpacing: 0,
                         ),
                       ),
                       SizedBox(width: 8),
@@ -637,8 +645,6 @@ class _ChatbotScreenState extends State<ChatbotScreen>
     );
   }
 }
-
-// ─── Sub-widgets ──────────────────────────────────────────────────────────────
 
 class _HeaderButton extends StatelessWidget {
   const _HeaderButton({required this.icon, required this.onTap});
@@ -829,8 +835,6 @@ class _TypingDots extends StatelessWidget {
     );
   }
 }
-
-// ─── Model ────────────────────────────────────────────────────────────────────
 
 class ChatMessage {
   final String text;

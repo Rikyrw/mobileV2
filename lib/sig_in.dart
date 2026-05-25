@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'email_verification_notice.dart';
 import 'services/firebase_account_service.dart';
+import 'services/greenpoint_api_service.dart';
 import 'sign_up.dart';
 
 class SignInScreen extends StatefulWidget {
@@ -52,6 +54,17 @@ class _SignInScreenState extends State<SignInScreen> {
       );
     } catch (e) {
       if (mounted) {
+        if (FirebaseAccountService.isEmailNotVerifiedError(e)) {
+          Navigator.of(context).pushReplacement(
+            MaterialPageRoute(
+              builder: (context) => EmailVerificationNoticeScreen(
+                email: FirebaseAccountService.emailFromEmailNotVerifiedError(e),
+              ),
+            ),
+          );
+          return;
+        }
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(FirebaseAccountService.messageForError(e))),
         );
@@ -83,7 +96,7 @@ class _SignInScreenState extends State<SignInScreen> {
     });
 
     try {
-      await FirebaseAccountService.sendPasswordResetForIdentifier(identifier);
+      await GreenPointApiService.sendPasswordReset(identifier);
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -95,9 +108,9 @@ class _SignInScreenState extends State<SignInScreen> {
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(FirebaseAccountService.messageForError(e))),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.toString())));
     } finally {
       if (mounted) {
         setState(() {
@@ -262,8 +275,8 @@ class _SignInScreenState extends State<SignInScreen> {
                                     fontFamily: 'Roboto',
                                   ),
                                 ),
-                          ),
                         ),
+                      ),
                       const SizedBox(height: 10),
                       SizedBox(
                         width: double.infinity,

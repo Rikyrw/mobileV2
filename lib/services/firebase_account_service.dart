@@ -1,11 +1,20 @@
-import 'package:bcrypt/bcrypt.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:mob_2/services/greenpoint_api_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
+
+class EmailNotVerifiedException implements Exception {
+  EmailNotVerifiedException(this.email);
+
+  final String email;
+
+  @override
+  String toString() => 'Email belum diverifikasi.';
+}
 
 class FirebaseAccountService {
   FirebaseAccountService._();
@@ -29,13 +38,29 @@ class FirebaseAccountService {
     }
   }
 
+  static bool isEmailNotVerifiedError(Object error) {
+    return error is EmailNotVerifiedException;
+  }
+
+  static String? emailFromEmailNotVerifiedError(Object error) {
+    return error is EmailNotVerifiedException ? error.email : null;
+  }
+
   static Future<UserCredential> signInWithEmailOrUsername({
     required String identifier,
     required String password,
   }) async {
     _ensureFirebaseReady();
-    final email = await _resolveEmail(identifier);
     final mirroredRecord = await _findNasabahByIdentifier(identifier);
+    if (_emailNeedsVerification(mirroredRecord)) {
+      throw EmailNotVerifiedException(
+        _text(mirroredRecord?['email'])?.toLowerCase() ?? identifier.trim(),
+      );
+    }
+
+    final email =
+        _text(mirroredRecord?['email'])?.toLowerCase() ??
+        await _resolveEmail(identifier);
     final storedPassword = _text(mirroredRecord?['password']);
 
     try {
@@ -120,27 +145,7 @@ class FirebaseAccountService {
   }
 
   static Future<void> sendPasswordResetForIdentifier(String identifier) async {
-    _ensureFirebaseReady();
-
-    final email = await _resolveEmail(identifier);
-    final record = await _findNasabahByIdentifier(identifier);
-    final storedPassword = _text(record?['password']);
-
-    if (record != null && !_isGoogleOnlyNasabah(record)) {
-      await _ensureFirebasePasswordAccountForReset(
-        email: email,
-        record: record,
-        storedPassword: storedPassword,
-      );
-    }
-
-    await _auth.sendPasswordResetEmail(email: email);
-
-    if (record != null &&
-        !_isGoogleOnlyNasabah(record) &&
-        !_isFirebaseBackedPassword(storedPassword)) {
-      await _markNasabahPasswordPendingFirebase(email);
-    }
+    await GreenPointApiService.sendPasswordReset(identifier);
   }
 
   static Future<UserCredential?> signInWithGoogle() async {
@@ -248,6 +253,10 @@ class FirebaseAccountService {
   }
 
   static String messageForError(Object error) {
+    if (error is EmailNotVerifiedException) {
+      return 'Email belum diverifikasi. Cek email Anda atau kirim ulang link verifikasi.';
+    }
+
     if (error is FirebaseAuthException) {
       switch (error.code) {
         case 'invalid-email':
@@ -524,7 +533,15 @@ class FirebaseAccountService {
         'alamat': _text(profile['alamat']) ?? '',
         'photo_url': _text(profile['photo_url']),
         'google_id': _text(profile['google_id']),
+        'provider': _text(profile['provider']),
       };
+
+      if (_text(profile['provider']) == 'google' ||
+          _text(profile['google_id']) != null) {
+        payload['email_verified_at'] = DateTime.now().toUtc().toIso8601String();
+        payload['email_verification_token_hash'] = null;
+        payload['email_verification_expires_at'] = null;
+      }
 
       payload.removeWhere((key, value) => value == null);
 
@@ -579,24 +596,46 @@ class FirebaseAccountService {
       return null;
     }
 
-    final storedPassword = _text(record['password']);
-    final email = _text(record['email'])?.toLowerCase();
+    if (_emailNeedsVerification(record)) {
+      throw EmailNotVerifiedException(
+        _text(record['email'])?.toLowerCase() ?? identifier.trim(),
+      );
+    }
 
-    if (storedPassword == null ||
-        email == null ||
-        _isFirebaseBackedPassword(storedPassword) ||
-        !_looksLikeBcryptHash(storedPassword) ||
-        !BCrypt.checkpw(password, storedPassword)) {
+    final storedPassword = _text(record['password']);
+
+    if (_isFirebaseBackedPassword(storedPassword)) {
       return null;
     }
 
-    final fullName = _text(record['nama_lengkap']);
-    final userName = _text(record['user_name']);
-    final address = _text(record['alamat']);
-    final phone = _text(record['no_hp']);
-    final photoUrl = _text(record['photo_url']);
-    final googleId = _text(record['google_id']);
-    final balance = record['saldo'] as num?;
+    final verifiedUser = await _verifyManualLoginWithBackend(
+      identifier: identifier,
+      password: password,
+    );
+
+    if (verifiedUser == null) {
+      return null;
+    }
+
+    final email =
+        _text(verifiedUser['email'])?.toLowerCase() ??
+        _text(record['email'])?.toLowerCase();
+
+    if (email == null) {
+      return null;
+    }
+
+    final fullName =
+        _text(verifiedUser['nama_lengkap']) ?? _text(record['nama_lengkap']);
+    final userName =
+        _text(verifiedUser['user_name']) ?? _text(record['user_name']);
+    final address = _text(verifiedUser['alamat']) ?? _text(record['alamat']);
+    final phone = _text(verifiedUser['no_hp']) ?? _text(record['no_hp']);
+    final photoUrl =
+        _text(verifiedUser['photo_url']) ?? _text(record['photo_url']);
+    final googleId =
+        _text(verifiedUser['google_id']) ?? _text(record['google_id']);
+    final balance = verifiedUser['saldo'] as num? ?? record['saldo'] as num?;
 
     try {
       final credential = await _auth.createUserWithEmailAndPassword(
@@ -653,6 +692,24 @@ class FirebaseAccountService {
     }
   }
 
+  static Future<Map<String, dynamic>?> _verifyManualLoginWithBackend({
+    required String identifier,
+    required String password,
+  }) async {
+    try {
+      return await GreenPointApiService.verifyManualLogin(
+        identifier: identifier,
+        password: password,
+      );
+    } on GreenPointApiException catch (error) {
+      if (error.message.toLowerCase().contains('email belum diverifikasi')) {
+        throw EmailNotVerifiedException(identifier.trim());
+      }
+
+      return null;
+    }
+  }
+
   static Future<String?> _findMirroredEmailByUsername(String userName) async {
     final record = await _findNasabahByIdentifier(
       userName,
@@ -679,7 +736,7 @@ class FirebaseAccountService {
           final emailRows = await client
               .from('nasabah')
               .select(
-                'id_nasabah,user_name,nama_lengkap,email,password,no_hp,alamat,photo_url,google_id,saldo',
+                'id_nasabah,user_name,nama_lengkap,email,password,no_hp,alamat,photo_url,google_id,provider,saldo,email_verified_at,email_verification_token_hash,email_verification_expires_at,email_verification_sent_at',
               )
               .eq('email', candidate)
               .limit(1);
@@ -693,7 +750,7 @@ class FirebaseAccountService {
       final userNameRows = await client
           .from('nasabah')
           .select(
-            'id_nasabah,user_name,nama_lengkap,email,password,no_hp,alamat,photo_url,google_id,saldo',
+            'id_nasabah,user_name,nama_lengkap,email,password,no_hp,alamat,photo_url,google_id,provider,saldo,email_verified_at,email_verification_token_hash,email_verification_expires_at,email_verification_sent_at',
           )
           .eq('user_name', value)
           .limit(1);
@@ -722,93 +779,24 @@ class FirebaseAccountService {
     }
   }
 
-  static Future<void> _markNasabahPasswordPendingFirebase(String email) async {
-    try {
-      await Supabase.instance.client
-          .from('nasabah')
-          .update({'password': 'firebase-auth-pending'})
-          .eq('email', email);
-    } catch (e) {
-      debugPrint('Supabase pending Firebase marker update skipped: $e');
-    }
-  }
-
-  static Future<void> _ensureFirebasePasswordAccountForReset({
-    required String email,
-    required Map<String, dynamic> record,
-    required String? storedPassword,
-  }) async {
-    if (_isFirebaseBackedPassword(storedPassword)) {
-      return;
-    }
-
-    final generatedPassword = _generateTemporaryPassword();
-    final fullName = _text(record['nama_lengkap']);
-    final userName = _text(record['user_name']);
-    final address = _text(record['alamat']);
-    final phone = _text(record['no_hp']);
-    final photoUrl = _text(record['photo_url']);
-    final googleId = _text(record['google_id']);
-    final balance = record['saldo'] as num?;
-
-    try {
-      final credential = await _auth.createUserWithEmailAndPassword(
-        email: email,
-        password: generatedPassword,
-      );
-
-      final user = credential.user;
-      if (user == null) {
-        return;
-      }
-
-      if (fullName != null) {
-        await user.updateDisplayName(fullName);
-      }
-
-      await _upsertUserProfile(
-        user: user,
-        provider: 'password',
-        fullName: fullName,
-        userName: userName,
-        address: address,
-        phone: phone,
-        photoUrl: photoUrl,
-        googleId: googleId,
-        balance: balance,
-      );
-    } on FirebaseAuthException catch (error) {
-      if (error.code != 'email-already-in-use') {
-        rethrow;
-      }
-    }
-  }
-
   static bool _isFirebaseBackedPassword(String? value) {
     return value != null &&
-        (value.startsWith('firebase-auth:') || value == 'firebase-auth-pending');
+        (value.startsWith('firebase-auth:') ||
+            value == 'firebase-auth-pending');
   }
 
   static bool _isFirebasePendingPassword(String? value) {
     return value == 'firebase-auth-pending';
   }
 
-  static bool _isGoogleOnlyNasabah(Map<String, dynamic> record) {
+  static bool _emailNeedsVerification(Map<String, dynamic>? record) {
+    if (record == null || !record.containsKey('email_verified_at')) {
+      return false;
+    }
+
     final googleId = _text(record['google_id']);
-    final storedPassword = _text(record['password']);
 
-    return googleId != null && storedPassword == null;
-  }
-
-  static String _generateTemporaryPassword() {
-    return 'Gp-${DateTime.now().microsecondsSinceEpoch}-Temp!';
-  }
-
-  static bool _looksLikeBcryptHash(String value) {
-    return value.startsWith(r'$2a$') ||
-        value.startsWith(r'$2b$') ||
-        value.startsWith(r'$2x$') ||
-        value.startsWith(r'$2y$');
+    return googleId == null && _text(record['email_verified_at']) == null;
   }
 
   static GoogleSignIn _buildGoogleSignIn({bool requireWebClientId = true}) {

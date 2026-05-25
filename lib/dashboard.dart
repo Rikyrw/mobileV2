@@ -1,7 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:mob_2/email_verification_notice.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'services/app_cache_service.dart';
 import 'services/firebase_account_service.dart';
 
 class DashboardScreen extends StatefulWidget {
@@ -78,14 +80,22 @@ class _DashboardScreenState extends State<DashboardScreen> {
       _currentEmail = email;
 
       if (email != null && email.isNotEmpty) {
-        final res = await Supabase.instance.client
-            .from('nasabah')
-            .select('id_nasabah,nama_lengkap,user_name,email')
-            .eq('email', email)
-            .limit(1);
+        final record = await AppCacheService.fetchNasabahByEmail(email);
 
-        if (res.isNotEmpty) {
-          final record = res.first;
+        if (record != null) {
+          if (_emailNeedsVerification(record)) {
+            await FirebaseAccountService.signOut();
+            if (!mounted) return;
+            Navigator.of(context).pushReplacement(
+              MaterialPageRoute(
+                builder: (context) => EmailVerificationNoticeScreen(
+                  email: (record['email'] as String?) ?? email,
+                ),
+              ),
+            );
+            return;
+          }
+
           final nasabahId = record['id_nasabah'] as int?;
           setState(() {
             _fetchedUserName =
@@ -132,17 +142,9 @@ class _DashboardScreenState extends State<DashboardScreen> {
         currentStart,
         currentEnd,
       );
-      final setorPrev = await _countSetorSampah(
-        nasabahId,
-        prevStart,
-        prevEnd,
-      );
+      final setorPrev = await _countSetorSampah(nasabahId, prevStart, prevEnd);
 
-      final ppobCurrent = await _countPpob(
-        nasabahId,
-        currentStart,
-        currentEnd,
-      );
+      final ppobCurrent = await _countPpob(nasabahId, currentStart, currentEnd);
       final ppobPrev = await _countPpob(nasabahId, prevStart, prevEnd);
 
       if (!mounted) return;
@@ -246,348 +248,272 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final navItems = [
-      const BottomNavigationItemConfig(
-        iconAsset: 'assets/home11.png',
-        label: 'Home',
-        isActive: true,
-        fallbackIcon: Icons.home,
-      ),
-      BottomNavigationItemConfig(
-        iconAsset: 'assets/riwayat1.png',
-        label: 'Transaksi',
-        isActive: false,
-        fallbackIcon: Icons.swap_horiz,
-        onTap: () {
-          Navigator.of(context).pushReplacementNamed(
-            '/transaksi',
-            arguments: {'email': _currentEmail},
-          );
-        },
-      ),
-      BottomNavigationItemConfig(
-        iconAsset: 'assets/chat_ai.png',
-        label: 'Chat AI',
-        isActive: false,
-        fallbackIcon: Icons.smart_toy,
-        onTap: () {
-          Navigator.of(context).pushNamed('/chatbot');
-        },
-      ),
-      BottomNavigationItemConfig(
-        iconAsset: 'assets/history.png',
-        label: 'Riwayat',
-        isActive: false,
-        fallbackIcon: Icons.history,
-        onTap: () {
-          Navigator.of(context).pushReplacementNamed(
-            '/riwayat',
-            arguments: {'email': _currentEmail},
-          );
-        },
-      ),
-      BottomNavigationItemConfig(
-        iconAsset: 'assets/person.png',
-        label: 'Profil',
-        isActive: false,
-        fallbackIcon: Icons.person,
-        onTap: () {
-          Navigator.of(context).pushReplacementNamed(
-            '/profil',
-            arguments: {'email': _currentEmail},
-          );
-        },
-      ),
-    ];
-
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: Stack(
-        children: [
-          Positioned.fill(
-            bottom: 130,
-            child: SingleChildScrollView(
-              child: Container(
-                width: double.infinity,
-                color: Colors.white,
+    return ColoredBox(
+      color: Colors.white,
+      child: SingleChildScrollView(
+        child: Container(
+          width: double.infinity,
+          color: Colors.white,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(
+                padding: const EdgeInsetsDirectional.fromSTEB(20, 40, 20, 30),
+                decoration: const BoxDecoration(color: Color(0xFF315A39)),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      padding: const EdgeInsetsDirectional.fromSTEB(
-                        20,
-                        40,
-                        20,
-                        30,
-                      ),
-                      decoration: const BoxDecoration(color: Color(0xFF315A39)),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Opacity(
-                            opacity: 0.8,
-                            child: Text(
-                              _dummyData.greeting,
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 16,
-                                fontFamily: 'Roboto',
-                                fontWeight: FontWeight.w400,
-                              ),
-                            ),
-                          ),
-                          SizedBox(height: 4),
-                          Text(
-                            _fetchedUserName ?? _dummyData.userName,
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 24,
-                              fontFamily: 'Roboto',
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          SizedBox(height: 6),
-                          Opacity(
-                            opacity: 0.8,
-                            child: Text(
-                              _formatDayDateTime(_now),
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 12,
-                                fontFamily: 'Roboto',
-                                fontWeight: FontWeight.w400,
-                              ),
-                            ),
-                          ),
-                        ],
+                    Opacity(
+                      opacity: 0.8,
+                      child: Text(
+                        _dummyData.greeting,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontFamily: 'Roboto',
+                          fontWeight: FontWeight.w400,
+                        ),
                       ),
                     ),
-                    Padding(
-                      padding: const EdgeInsets.all(20),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Dashboard',
-                            style: TextStyle(
-                              color: Color(0xFF333333),
-                              fontSize: 20,
-                              fontFamily: 'Roboto',
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            _dummyData.welcomeMessage,
-                            style: TextStyle(
-                              color: Color(0xFF666666),
-                              fontSize: 14,
-                              fontFamily: 'Roboto',
-                              fontWeight: FontWeight.w400,
-                            ),
-                          ),
-                          const SizedBox(height: 30),
-                          Container(
-                            width: double.infinity,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF4F8F4),
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: GestureDetector(
-                                    onTap: () {
-                                      Navigator.of(
-                                        context,
-                                      ).pushReplacementNamed(
-                                        '/setor-sampah',
-                                        arguments: {'email': _currentEmail},
-                                      );
-                                    },
-                                    child: Container(
-                                      padding: const EdgeInsets.all(20),
-                                      decoration: const BoxDecoration(
-                                        color: Color(0xFFE8F5E9),
-                                        borderRadius: BorderRadius.only(
-                                          topLeft: Radius.circular(14),
-                                          bottomLeft: Radius.circular(14),
-                                        ),
-                                      ),
-                                      child: Column(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Text(
-                                            'Transaksi\nSetor Sampah',
-                                            textAlign: TextAlign.center,
-                                            style: TextStyle(
-                                              color: Color(0xFF315A39),
-                                              fontSize: 14,
-                                              fontFamily: 'Roboto',
-                                              fontWeight: FontWeight.w700,
-                                            ),
-                                          ),
-                                          SizedBox(height: 16),
-                                          Text(
-                                            _setorSampahCount ??
-                                                _dummyData.setorSampahCount,
-                                            style: TextStyle(
-                                              color: Color(0xFF315A39),
-                                              fontSize: 20,
-                                              fontFamily: 'Roboto',
-                                              fontWeight: FontWeight.w700,
-                                            ),
-                                          ),
-                                          SizedBox(height: 8),
-                                          Text(
-                                            _setorSampahGrowth ??
-                                                _dummyData.setorSampahGrowth,
-                                            style: TextStyle(
-                                              color: Color(0xFF4CAF50),
-                                              fontSize: 12,
-                                              fontFamily: 'Roboto',
-                                              fontWeight: FontWeight.w400,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                Container(
-                                  width: 1,
-                                  height: 80,
-                                  color: const Color(0xFFE0E0E0),
-                                ),
-                                Expanded(
-                                  child: Container(
-                                    padding: const EdgeInsets.all(20),
-                                    decoration: const BoxDecoration(
-                                      color: Color(0xFFEDF7ED),
-                                      borderRadius: BorderRadius.only(
-                                        topRight: Radius.circular(14),
-                                        bottomRight: Radius.circular(14),
-                                      ),
-                                    ),
-                                    child: Column(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Text(
-                                          'Transaksi\nPPOB',
-                                          textAlign: TextAlign.center,
-                                          style: TextStyle(
-                                            color: Color(0xFF315A39),
-                                            fontSize: 14,
-                                            fontFamily: 'Roboto',
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        ),
-                                        SizedBox(height: 16),
-                                        Text(
-                                          _ppobCount ??
-                                              _dummyData.ppobBalance,
-                                          style: TextStyle(
-                                            color: Color(0xFF315A39),
-                                            fontSize: 20,
-                                            fontFamily: 'Roboto',
-                                            fontWeight: FontWeight.w700,
-                                          ),
-                                        ),
-                                        SizedBox(height: 8),
-                                        Text(
-                                          _ppobGrowth ??
-                                              _dummyData.ppobGrowth,
-                                          style: TextStyle(
-                                            color: Color(0xFF4CAF50),
-                                            fontSize: 12,
-                                            fontFamily: 'Roboto',
-                                            fontWeight: FontWeight.w400,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 30),
-                          const Text(
-                            'Layanan Lainnya',
-                            style: TextStyle(
-                              color: Color(0xFF333333),
-                              fontSize: 16,
-                              fontFamily: 'Roboto',
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          Column(
-                            children: [
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  GestureDetector(
-                                    onTap: () {
-                                      Navigator.of(
-                                        context,
-                                      ).pushReplacementNamed(
-                                        '/emoney',
-                                        arguments: {'email': _currentEmail},
-                                      );
-                                    },
-                                    child: _serviceCard(
-                                      label: 'E-Money',
-                                      iconAsset: 'assets/wallet2.png',
-                                      fallbackIcon:
-                                          Icons.account_balance_wallet,
-                                      rightMargin: 16,
-                                    ),
-                                  ),
-                                  GestureDetector(
-                                    onTap: () {
-                                      Navigator.of(
-                                        context,
-                                      ).pushReplacementNamed(
-                                        '/pln',
-                                        arguments: {'email': _currentEmail},
-                                      );
-                                    },
-                                    child: _serviceCard(
-                                      label: 'PLN',
-                                      iconAsset: 'assets/pln1.png',
-                                      fallbackIcon: Icons.bolt,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              GestureDetector(
-                                onTap: () {
-                                  Navigator.of(context).pushReplacementNamed(
-                                    '/pulsa',
-                                    arguments: {'email': _currentEmail},
-                                  );
-                                },
-                                child: _serviceCard(
-                                  label: 'Pulsa',
-                                  iconAsset: 'assets/pulsa1.png',
-                                  fallbackIcon: Icons.phone_android,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 80),
-                        ],
+                    SizedBox(height: 4),
+                    Text(
+                      _fetchedUserName ?? _dummyData.userName,
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 24,
+                        fontFamily: 'Roboto',
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    SizedBox(height: 6),
+                    Opacity(
+                      opacity: 0.8,
+                      child: Text(
+                        _formatDayDateTime(_now),
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontFamily: 'Roboto',
+                          fontWeight: FontWeight.w400,
+                        ),
                       ),
                     ),
                   ],
                 ),
               ),
-            ),
+              Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Dashboard',
+                      style: TextStyle(
+                        color: Color(0xFF333333),
+                        fontSize: 20,
+                        fontFamily: 'Roboto',
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _dummyData.welcomeMessage,
+                      style: TextStyle(
+                        color: Color(0xFF666666),
+                        fontSize: 14,
+                        fontFamily: 'Roboto',
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                    const SizedBox(height: 30),
+                    Container(
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF4F8F4),
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () {
+                                Navigator.of(context).pushReplacementNamed(
+                                  '/setor-sampah',
+                                  arguments: {'email': _currentEmail},
+                                );
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.all(20),
+                                decoration: const BoxDecoration(
+                                  color: Color(0xFFE8F5E9),
+                                  borderRadius: BorderRadius.only(
+                                    topLeft: Radius.circular(14),
+                                    bottomLeft: Radius.circular(14),
+                                  ),
+                                ),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      'Transaksi\nSetor Sampah',
+                                      textAlign: TextAlign.center,
+                                      style: TextStyle(
+                                        color: Color(0xFF315A39),
+                                        fontSize: 14,
+                                        fontFamily: 'Roboto',
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    SizedBox(height: 16),
+                                    Text(
+                                      _setorSampahCount ??
+                                          _dummyData.setorSampahCount,
+                                      style: TextStyle(
+                                        color: Color(0xFF315A39),
+                                        fontSize: 20,
+                                        fontFamily: 'Roboto',
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                    SizedBox(height: 8),
+                                    Text(
+                                      _setorSampahGrowth ??
+                                          _dummyData.setorSampahGrowth,
+                                      style: TextStyle(
+                                        color: Color(0xFF4CAF50),
+                                        fontSize: 12,
+                                        fontFamily: 'Roboto',
+                                        fontWeight: FontWeight.w400,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                          Container(
+                            width: 1,
+                            height: 80,
+                            color: const Color(0xFFE0E0E0),
+                          ),
+                          Expanded(
+                            child: Container(
+                              padding: const EdgeInsets.all(20),
+                              decoration: const BoxDecoration(
+                                color: Color(0xFFEDF7ED),
+                                borderRadius: BorderRadius.only(
+                                  topRight: Radius.circular(14),
+                                  bottomRight: Radius.circular(14),
+                                ),
+                              ),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Text(
+                                    'Transaksi\nPPOB',
+                                    textAlign: TextAlign.center,
+                                    style: TextStyle(
+                                      color: Color(0xFF315A39),
+                                      fontSize: 14,
+                                      fontFamily: 'Roboto',
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  SizedBox(height: 16),
+                                  Text(
+                                    _ppobCount ?? _dummyData.ppobBalance,
+                                    style: TextStyle(
+                                      color: Color(0xFF315A39),
+                                      fontSize: 20,
+                                      fontFamily: 'Roboto',
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  SizedBox(height: 8),
+                                  Text(
+                                    _ppobGrowth ?? _dummyData.ppobGrowth,
+                                    style: TextStyle(
+                                      color: Color(0xFF4CAF50),
+                                      fontSize: 12,
+                                      fontFamily: 'Roboto',
+                                      fontWeight: FontWeight.w400,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 30),
+                    const Text(
+                      'Layanan Lainnya',
+                      style: TextStyle(
+                        color: Color(0xFF333333),
+                        fontSize: 16,
+                        fontFamily: 'Roboto',
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Column(
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            GestureDetector(
+                              onTap: () {
+                                Navigator.of(context).pushReplacementNamed(
+                                  '/emoney',
+                                  arguments: {'email': _currentEmail},
+                                );
+                              },
+                              child: _serviceCard(
+                                label: 'E-Money',
+                                iconAsset: 'assets/wallet2.png',
+                                fallbackIcon: Icons.account_balance_wallet,
+                                rightMargin: 16,
+                              ),
+                            ),
+                            GestureDetector(
+                              onTap: () {
+                                Navigator.of(context).pushReplacementNamed(
+                                  '/pln',
+                                  arguments: {'email': _currentEmail},
+                                );
+                              },
+                              child: _serviceCard(
+                                label: 'PLN',
+                                iconAsset: 'assets/pln1.png',
+                                fallbackIcon: Icons.bolt,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        GestureDetector(
+                          onTap: () {
+                            Navigator.of(context).pushReplacementNamed(
+                              '/pulsa',
+                              arguments: {'email': _currentEmail},
+                            );
+                          },
+                          child: _serviceCard(
+                            label: 'Pulsa',
+                            iconAsset: 'assets/pulsa1.png',
+                            fallbackIcon: Icons.phone_android,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 80),
+                  ],
+                ),
+              ),
+            ],
           ),
-          DashboardBottomNavigation(items: navItems),
-        ],
+        ),
       ),
     );
   }
@@ -628,6 +554,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
         ],
       ),
     );
+  }
+
+  static bool _emailNeedsVerification(Map<String, dynamic> record) {
+    final emailVerifiedAt = record['email_verified_at']?.toString().trim();
+    final googleId = record['google_id']?.toString().trim();
+
+    return (emailVerifiedAt == null || emailVerifiedAt.isEmpty) &&
+        (googleId == null || googleId.isEmpty);
   }
 }
 
@@ -813,7 +747,14 @@ class DashboardBottomNavigation extends StatelessWidget {
           )
         : navBar;
 
-    return Positioned(left: 0, right: 0, bottom: bottom, child: navChild);
+    if (bottom <= 0) {
+      return navChild;
+    }
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: bottom),
+      child: navChild,
+    );
   }
 }
 
@@ -882,7 +823,7 @@ class _BottomNavItem extends StatelessWidget {
                 fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
                 color: isActive ? activeColor : inactiveColor,
               ),
-              child: Text(label),
+              child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
             ),
           ],
         ),
@@ -905,6 +846,75 @@ class BottomNavigationItemConfig {
   final bool isActive;
   final IconData fallbackIcon;
   final VoidCallback? onTap;
+}
+
+class PaginationControls extends StatelessWidget {
+  const PaginationControls({
+    super.key,
+    required this.currentPage,
+    required this.hasNextPage,
+    required this.isLoading,
+    required this.onPrevious,
+    required this.onNext,
+  });
+
+  final int currentPage;
+  final bool hasNextPage;
+  final bool isLoading;
+  final VoidCallback onPrevious;
+  final VoidCallback onNext;
+
+  @override
+  Widget build(BuildContext context) {
+    final canGoBack = currentPage > 0 && !isLoading;
+    final canGoNext = hasNextPage && !isLoading;
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 4),
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 48,
+            height: 42,
+            child: OutlinedButton(
+              onPressed: canGoBack ? onPrevious : null,
+              style: OutlinedButton.styleFrom(
+                padding: EdgeInsets.zero,
+                minimumSize: const Size(48, 42),
+              ),
+              child: const Icon(Icons.chevron_left_rounded, size: 22),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              'Halaman ${currentPage + 1}',
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: Color(0xFF333333),
+                fontSize: 13,
+                fontFamily: 'Roboto',
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 48,
+            height: 42,
+            child: ElevatedButton(
+              onPressed: canGoNext ? onNext : null,
+              style: ElevatedButton.styleFrom(
+                padding: EdgeInsets.zero,
+                minimumSize: const Size(48, 42),
+              ),
+              child: const Icon(Icons.chevron_right_rounded, size: 22),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 // class _BottomNavItem extends StatelessWidget {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'dashboard.dart';
+import 'services/app_cache_service.dart';
 
 class TransaksiScreen extends StatefulWidget {
   const TransaksiScreen({super.key});
@@ -11,6 +12,7 @@ class TransaksiScreen extends StatefulWidget {
 }
 
 class _TransaksiScreenState extends State<TransaksiScreen> {
+  static const int _pageSize = 8;
   static const _dummyData = TransaksiDummyData(
     greeting: 'Halo,',
     userName: 'Haidar Rais',
@@ -21,7 +23,6 @@ class _TransaksiScreenState extends State<TransaksiScreen> {
 
   String? _fetchedUserName;
   bool _loadingProfile = false;
-  String? _currentEmail;
   int? _nasabahId;
   bool _loadingTransaksi = false;
   List<TransaksiItem> _transactions = [];
@@ -29,6 +30,8 @@ class _TransaksiScreenState extends State<TransaksiScreen> {
   DateTime? _fromDate;
   DateTime? _toDate;
   bool _hasSearched = false;
+  int _currentPage = 0;
+  bool _hasNextPage = false;
 
   @override
   void initState() {
@@ -60,20 +63,16 @@ class _TransaksiScreenState extends State<TransaksiScreen> {
       // Prefer route argument, otherwise use auth currentUser
       final user = Supabase.instance.client.auth.currentUser;
       final email = emailArg ?? user?.email;
-      _currentEmail = email;
 
       if (email != null && email.isNotEmpty) {
-        final res = await Supabase.instance.client
-            .from('nasabah')
-            .select('id_nasabah,nama_lengkap,user_name,email')
-            .eq('email', email)
-            .limit(1);
+        final record = await AppCacheService.fetchNasabahByEmail(email);
 
-        if (res.isNotEmpty) {
-          final record = res.first;
+        if (record != null) {
           final nasabahId = record['id_nasabah'] as int?;
           setState(() {
-            _fetchedUserName = (record['nama_lengkap'] as String?) ?? (record['user_name'] as String?);
+            _fetchedUserName =
+                (record['nama_lengkap'] as String?) ??
+                (record['user_name'] as String?);
             _nasabahId = nasabahId;
           });
           if (nasabahId != null && !_hasLoadedTransactions) {
@@ -88,58 +87,89 @@ class _TransaksiScreenState extends State<TransaksiScreen> {
     }
   }
 
-  Future<void> _loadTransactions(int nasabahId, {bool pendingOnly = false}) async {
+  Future<void> _loadTransactions(
+    int nasabahId, {
+    bool pendingOnly = false,
+    int page = 0,
+    bool forceRefresh = false,
+  }) async {
     if (_loadingTransaksi) return;
     setState(() => _loadingTransaksi = true);
 
     try {
-      final query = Supabase.instance.client
-          .from('penarikan_saldo')
-          .select('id_penarikan,jenis_penukaran,nominal,status,tanggal_pengajuan,deskripsi')
-          .eq('id_nasabah', nasabahId);
-
-      if (pendingOnly) {
-        query.eq('status', 'pending');
-      } else if (_fromDate != null && _toDate != null) {
-        final fromDate = _formatDateQuery(_fromDate!);
-        final toDate = _formatDateQuery(_toDate!);
-        query.gte('tanggal_pengajuan', fromDate).lte('tanggal_pengajuan', toDate);
-      }
-
-      final res = await query.order('tanggal_pengajuan', ascending: false);
+      final res = await AppCacheService.fetchPpobTransactionPage(
+        nasabahId: nasabahId,
+        page: page,
+        pageSize: _pageSize,
+        pendingOnly: pendingOnly,
+        from: pendingOnly ? null : _fromDate,
+        to: pendingOnly ? null : _toDate,
+        forceRefresh: forceRefresh,
+      );
 
       setState(() {
-        _transactions = res.map((e) {
+        _transactions = res.items.map((e) {
           final id = e['id_penarikan'] as int?;
           final nominal = (e['nominal'] as num?)?.toDouble() ?? 0.0;
           return TransaksiItem(
             transactionId: id == null ? '-' : 'TRX-$id',
-            productName: (e['jenis_penukaran']?.toString() ?? '-').toUpperCase(),
+            productName: (e['jenis_penukaran']?.toString() ?? '-')
+                .toUpperCase(),
             target: _formatPpobTarget(e['deskripsi']?.toString() ?? ''),
             amount: _formatRupiah(nominal.round()),
             date: _formatDate(e['tanggal_pengajuan']?.toString()),
             status: e['status']?.toString() ?? '-',
           );
         }).toList();
+        _currentPage = page;
+        _hasNextPage = res.hasNextPage;
         _hasLoadedTransactions = true;
       });
     } catch (e) {
       debugPrint('Load transaksi error: $e');
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Gagal memuat transaksi: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Gagal memuat transaksi: $e')));
       }
     } finally {
       if (mounted) setState(() => _loadingTransaksi = false);
     }
   }
 
+  void _loadPreviousPage() {
+    final nasabahId = _nasabahId;
+    if (nasabahId == null || _currentPage == 0) {
+      return;
+    }
+
+    _loadTransactions(
+      nasabahId,
+      pendingOnly: !_hasSearched,
+      page: _currentPage - 1,
+    );
+  }
+
+  void _loadNextPage() {
+    final nasabahId = _nasabahId;
+    if (nasabahId == null || !_hasNextPage) {
+      return;
+    }
+
+    _loadTransactions(
+      nasabahId,
+      pendingOnly: !_hasSearched,
+      page: _currentPage + 1,
+    );
+  }
+
   Future<void> _pickDate({required bool isFrom}) async {
     final now = DateTime.now();
     final lastAllowed = DateTime(now.year, now.month, now.day);
     final firstAllowed = lastAllowed.subtract(const Duration(days: 31));
-    final initial = isFrom ? (_fromDate ?? lastAllowed) : (_toDate ?? lastAllowed);
+    final initial = isFrom
+        ? (_fromDate ?? lastAllowed)
+        : (_toDate ?? lastAllowed);
 
     final picked = await showDatePicker(
       context: context,
@@ -221,303 +251,274 @@ class _TransaksiScreenState extends State<TransaksiScreen> {
   Widget build(BuildContext context) {
     final visibleTransactions = _hasSearched
         ? _transactions
-        : _transactions.where((item) => item.status.toLowerCase() == 'pending').toList();
+        : _transactions
+              .where((item) => item.status.toLowerCase() == 'pending')
+              .toList();
     final hasTransactionData = visibleTransactions.isNotEmpty;
 
-    final transaksiNavItems = [
-      BottomNavigationItemConfig(
-        iconAsset: 'assets/home11.png',
-        label: 'Home',
-        isActive: false,
-        fallbackIcon: Icons.home,
-        onTap: () {
-          Navigator.of(context).pushReplacementNamed('/dashboard', arguments: {'email': _currentEmail});
-        },
-      ),
-      const BottomNavigationItemConfig(
-        iconAsset: 'assets/riwayat1.png',
-        label: 'Transaksi',
-        isActive: true,
-        fallbackIcon: Icons.swap_horiz,
-      ),
-      BottomNavigationItemConfig(
-        iconAsset: 'assets/chat_ai.png',
-        label: 'Chat AI',
-        isActive: false,
-        fallbackIcon: Icons.smart_toy,
-        onTap: () {
-          Navigator.of(context).pushNamed('/chatbot');
-        },
-      ),
-      BottomNavigationItemConfig(
-        iconAsset: 'assets/history.png',
-        label: 'Riwayat',
-        isActive: false,
-        fallbackIcon: Icons.history,
-        onTap: () {
-          Navigator.of(context).pushReplacementNamed('/riwayat', arguments: {'email': _currentEmail});
-        },
-      ),
-      BottomNavigationItemConfig(
-        iconAsset: 'assets/person.png',
-        label: 'Profil',
-        isActive: false,
-        fallbackIcon: Icons.person,
-        onTap: () {
-          Navigator.of(context).pushReplacementNamed('/profil', arguments: {'email': _currentEmail});
-        },
-      ),
-    ];
-
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: Stack(
-        children: [
-          Positioned.fill(
-            bottom: 130,
-            child: SingleChildScrollView(
-              child: Container(
-                width: double.infinity,
-                color: Colors.white,
+    return ColoredBox(
+      color: Colors.white,
+      child: SingleChildScrollView(
+        child: Container(
+          width: double.infinity,
+          color: Colors.white,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(
+                padding: const EdgeInsetsDirectional.fromSTEB(20, 40, 20, 30),
+                decoration: const BoxDecoration(color: Color(0xFF315A39)),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Container(
-                      padding: const EdgeInsetsDirectional.fromSTEB(
-                        20,
-                        40,
-                        20,
-                        30,
-                      ),
-                      decoration: const BoxDecoration(color: Color(0xFF315A39)),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Opacity(
-                            opacity: 0.8,
-                            child: Text(
-                              _dummyData.greeting,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 16,
-                                fontFamily: 'Roboto',
-                                fontWeight: FontWeight.w400,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            _fetchedUserName ?? _dummyData.userName,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 24,
-                              fontFamily: 'Roboto',
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ],
+                    Opacity(
+                      opacity: 0.8,
+                      child: Text(
+                        _dummyData.greeting,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 16,
+                          fontFamily: 'Roboto',
+                          fontWeight: FontWeight.w400,
+                        ),
                       ),
                     ),
-                    Padding(
+                    const SizedBox(height: 4),
+                    Text(
+                      _fetchedUserName ?? _dummyData.userName,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 24,
+                        fontFamily: 'Roboto',
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _dummyData.title,
+                      style: const TextStyle(
+                        color: Color(0xFF333333),
+                        fontSize: 20,
+                        fontFamily: 'Roboto',
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _dummyData.subtitle,
+                      style: const TextStyle(
+                        color: Color(0xFF666666),
+                        fontSize: 14,
+                        fontFamily: 'Roboto',
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                    const SizedBox(height: 30),
+                    Container(
+                      width: double.infinity,
                       padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF6F7F8),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            _dummyData.title,
-                            style: const TextStyle(
+                          const Text(
+                            'Periode Mutasi',
+                            style: TextStyle(
                               color: Color(0xFF333333),
-                              fontSize: 20,
+                              fontSize: 16,
                               fontFamily: 'Roboto',
                               fontWeight: FontWeight.w700,
                             ),
                           ),
-                          const SizedBox(height: 8),
-                          Text(
-                            _dummyData.subtitle,
-                            style: const TextStyle(
+                          const SizedBox(height: 16),
+                          const Text(
+                            'Dari Tanggal:',
+                            style: TextStyle(
                               color: Color(0xFF666666),
                               fontSize: 14,
                               fontFamily: 'Roboto',
                               fontWeight: FontWeight.w400,
                             ),
                           ),
-                          const SizedBox(height: 30),
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(20),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF6F7F8),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'Periode Mutasi',
-                                  style: TextStyle(
-                                    color: Color(0xFF333333),
-                                    fontSize: 16,
-                                    fontFamily: 'Roboto',
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                                const SizedBox(height: 16),
-                                const Text(
-                                  'Dari Tanggal:',
-                                  style: TextStyle(
-                                    color: Color(0xFF666666),
-                                    fontSize: 14,
-                                    fontFamily: 'Roboto',
-                                    fontWeight: FontWeight.w400,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                _DateField(
-                                  value: _fromDate == null ? 'Pilih tanggal' : _formatDate(_formatDateQuery(_fromDate!)),
-                                  onTap: () => _pickDate(isFrom: true),
-                                ),
-                                const SizedBox(height: 16),
-                                const Text(
-                                  'Sampai Tanggal:',
-                                  style: TextStyle(
-                                    color: Color(0xFF666666),
-                                    fontSize: 14,
-                                    fontFamily: 'Roboto',
-                                    fontWeight: FontWeight.w400,
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                _DateField(
-                                  value: _toDate == null ? 'Pilih tanggal' : _formatDate(_formatDateQuery(_toDate!)),
-                                  onTap: () => _pickDate(isFrom: false),
-                                ),
-                              ],
+                          const SizedBox(height: 8),
+                          _DateField(
+                            value: _fromDate == null
+                                ? 'Pilih tanggal'
+                                : _formatDate(_formatDateQuery(_fromDate!)),
+                            onTap: () => _pickDate(isFrom: true),
+                          ),
+                          const SizedBox(height: 16),
+                          const Text(
+                            'Sampai Tanggal:',
+                            style: TextStyle(
+                              color: Color(0xFF666666),
+                              fontSize: 14,
+                              fontFamily: 'Roboto',
+                              fontWeight: FontWeight.w400,
                             ),
                           ),
-                          const SizedBox(height: 20),
-                          SizedBox(
-                            width: double.infinity,
-                            height: 50,
-                            child: ElevatedButton(
-                              onPressed: (_nasabahId == null || _fromDate == null || _toDate == null)
-                                  ? null
-                                  : () {
-                                      final from = _fromDate!;
-                                      final to = _toDate!;
-                                      if (!_validateRange(from, to)) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(content: Text('Periode mutasi maksimal 7 hari.')),
-                                        );
-                                        return;
-                                      }
-                                      setState(() => _hasSearched = true);
-                                      _loadTransactions(_nasabahId!);
-                                    },
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF315A39),
-                                elevation: 0,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                              ),
-                              child: const Text(
-                                'Tampilkan',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 16,
-                                  fontFamily: 'Roboto',
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
+                          const SizedBox(height: 8),
+                          _DateField(
+                            value: _toDate == null
+                                ? 'Pilih tanggal'
+                                : _formatDate(_formatDateQuery(_toDate!)),
+                            onTap: () => _pickDate(isFrom: false),
                           ),
-                          const SizedBox(height: 20),
-                          if (_loadingTransaksi)
-                            Padding(
-                              padding: const EdgeInsets.all(32),
-                              child: Center(
-                                child: Text(
-                                  _dummyData.emptyState,
-                                  textAlign: TextAlign.center,
-                                  style: const TextStyle(
-                                    color: Color(0xFF666666),
-                                    fontSize: 16,
-                                    fontFamily: 'Roboto',
-                                    fontWeight: FontWeight.w400,
-                                  ),
-                                ),
-                              ),
-                            )
-                          else if (!_hasSearched && hasTransactionData)
-                            Column(
-                              children: visibleTransactions
-                                  .map(
-                                    (item) => Padding(
-                                      padding: const EdgeInsets.only(
-                                        bottom: 12,
-                                      ),
-                                      child: _TransactionCard(item: item),
-                                    ),
-                                  )
-                                  .toList(),
-                            )
-                          else if (!_hasSearched)
-                            const Padding(
-                              padding: EdgeInsets.all(32),
-                              child: Center(
-                                child: Text(
-                                  'Belum ada transaksi pending.',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(
-                                    color: Color(0xFF666666),
-                                    fontSize: 16,
-                                    fontFamily: 'Roboto',
-                                    fontWeight: FontWeight.w400,
-                                  ),
-                                ),
-                              ),
-                            )
-                          else if (hasTransactionData)
-                            Column(
-                              children: visibleTransactions
-                                  .map(
-                                    (item) => Padding(
-                                      padding: const EdgeInsets.only(
-                                        bottom: 12,
-                                      ),
-                                      child: _TransactionCard(item: item),
-                                    ),
-                                  )
-                                  .toList(),
-                            )
-                          else
-                            Padding(
-                              padding: const EdgeInsets.all(32),
-                              child: Center(
-                                child: Text(
-                                  'Belum ada transaksi PPOB.',
-                                  textAlign: TextAlign.center,
-                                  style: const TextStyle(
-                                    color: Color(0xFF666666),
-                                    fontSize: 16,
-                                    fontFamily: 'Roboto',
-                                    fontWeight: FontWeight.w400,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          const SizedBox(height: 80),
                         ],
                       ),
                     ),
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton(
+                        onPressed:
+                            (_nasabahId == null ||
+                                _fromDate == null ||
+                                _toDate == null)
+                            ? null
+                            : () {
+                                final from = _fromDate!;
+                                final to = _toDate!;
+                                if (!_validateRange(from, to)) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Periode mutasi maksimal 7 hari.',
+                                      ),
+                                    ),
+                                  );
+                                  return;
+                                }
+                                setState(() {
+                                  _hasSearched = true;
+                                  _currentPage = 0;
+                                  _hasNextPage = false;
+                                });
+                                _loadTransactions(_nasabahId!, page: 0);
+                              },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF315A39),
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        child: const Text(
+                          'Tampilkan',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontFamily: 'Roboto',
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    if (_loadingTransaksi)
+                      Padding(
+                        padding: const EdgeInsets.all(32),
+                        child: Center(
+                          child: Text(
+                            _dummyData.emptyState,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Color(0xFF666666),
+                              fontSize: 16,
+                              fontFamily: 'Roboto',
+                              fontWeight: FontWeight.w400,
+                            ),
+                          ),
+                        ),
+                      )
+                    else if (!_hasSearched && hasTransactionData)
+                      Column(
+                        children: [
+                          ...visibleTransactions.map(
+                            (item) => Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: _TransactionCard(item: item),
+                            ),
+                          ),
+                          if (_currentPage > 0 || _hasNextPage)
+                            PaginationControls(
+                              currentPage: _currentPage,
+                              hasNextPage: _hasNextPage,
+                              isLoading: _loadingTransaksi,
+                              onPrevious: _loadPreviousPage,
+                              onNext: _loadNextPage,
+                            ),
+                        ],
+                      )
+                    else if (!_hasSearched)
+                      const Padding(
+                        padding: EdgeInsets.all(32),
+                        child: Center(
+                          child: Text(
+                            'Belum ada transaksi pending.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Color(0xFF666666),
+                              fontSize: 16,
+                              fontFamily: 'Roboto',
+                              fontWeight: FontWeight.w400,
+                            ),
+                          ),
+                        ),
+                      )
+                    else if (hasTransactionData)
+                      Column(
+                        children: [
+                          ...visibleTransactions.map(
+                            (item) => Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: _TransactionCard(item: item),
+                            ),
+                          ),
+                          if (_currentPage > 0 || _hasNextPage)
+                            PaginationControls(
+                              currentPage: _currentPage,
+                              hasNextPage: _hasNextPage,
+                              isLoading: _loadingTransaksi,
+                              onPrevious: _loadPreviousPage,
+                              onNext: _loadNextPage,
+                            ),
+                        ],
+                      )
+                    else
+                      Padding(
+                        padding: const EdgeInsets.all(32),
+                        child: Center(
+                          child: Text(
+                            'Belum ada transaksi PPOB.',
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(
+                              color: Color(0xFF666666),
+                              fontSize: 16,
+                              fontFamily: 'Roboto',
+                              fontWeight: FontWeight.w400,
+                            ),
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: 80),
                   ],
                 ),
               ),
-            ),
+            ],
           ),
-          DashboardBottomNavigation(items: transaksiNavItems),
-        ],
+        ),
       ),
     );
   }
@@ -531,7 +532,10 @@ class _TransactionCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final statusValue = item.status.toLowerCase();
-    final isSuccess = statusValue == 'berhasil' || statusValue == 'approved' || statusValue == 'sukses';
+    final isSuccess =
+        statusValue == 'berhasil' ||
+        statusValue == 'approved' ||
+        statusValue == 'sukses';
     final statusBackground = isSuccess
         ? const Color(0xFFE8F5E9)
         : const Color(0xFFFFF3E0);

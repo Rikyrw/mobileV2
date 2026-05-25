@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'services/app_cache_service.dart';
+
 class PerbaruiProfilScreen extends StatefulWidget {
   final Map<String, dynamic>? userData;
 
@@ -137,6 +139,10 @@ class _PerbaruiProfilScreenState extends State<PerbaruiProfilScreen> {
           .select();
 
       if (response.isNotEmpty) {
+        AppCacheService.invalidateNasabahByEmail(oldEmail.toString());
+        AppCacheService.putNasabahProfile(
+          Map<String, dynamic>.from(response.first),
+        );
         _showSuccess('Profil berhasil diperbarui!');
         // Kembali ke screen profil dengan flag update
         if (mounted) {

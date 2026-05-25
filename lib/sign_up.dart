@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:mob_2/email_verification_notice.dart';
 import 'package:mob_2/sig_in.dart';
 import 'package:mob_2/services/firebase_account_service.dart';
+import 'package:mob_2/services/greenpoint_api_service.dart';
 
 class SignUpScreen extends StatefulWidget {
   const SignUpScreen({super.key});
@@ -439,23 +441,26 @@ class _SignUpScreenState extends State<SignUpScreen> {
       _creating = true;
     });
     try {
-      final credential =
-          await FirebaseAccountService.createEmailPasswordAccount(
-            fullName: fullName,
-            userName: userName,
-            email: email,
-            password: password,
-            address: address,
-            phone: phone,
-          );
+      await GreenPointApiService.registerNasabah(
+        fullName: fullName,
+        userName: userName,
+        email: email,
+        password: password,
+        confirmPassword: confirm,
+        address: address,
+        phone: phone,
+      );
 
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Pendaftaran berhasil')));
-      Navigator.of(context).pushReplacementNamed(
-        '/dashboard',
-        arguments: {'email': credential.user?.email},
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Pendaftaran berhasil. Cek email untuk verifikasi.'),
+        ),
+      );
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (context) => EmailVerificationNoticeScreen(email: email),
+        ),
       );
     } catch (e) {
       if (mounted) {
