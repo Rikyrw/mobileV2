@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'dashboard.dart';
 import 'services/app_cache_service.dart';
+import 'services/firebase_account_service.dart';
 
 class RiwayatScreen extends StatefulWidget {
   const RiwayatScreen({super.key});
@@ -66,8 +66,8 @@ class _RiwayatScreenState extends State<RiwayatScreen> {
       }
 
       // Prefer route argument, otherwise use auth currentUser
-      final user = Supabase.instance.client.auth.currentUser;
-      final email = emailArg ?? user?.email;
+      final firebaseUser = FirebaseAccountService.currentUser;
+      final email = emailArg ?? firebaseUser?.email;
 
       if (email != null && email.isNotEmpty) {
         final record = await AppCacheService.fetchNasabahByEmail(email);

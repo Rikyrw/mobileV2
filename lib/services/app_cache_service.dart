@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+
+import 'greenpoint_api_service.dart';
 
 class PagedCacheResult<T> {
   const PagedCacheResult({
@@ -28,10 +29,6 @@ class AppCacheService {
   static const Duration _profileTtl = Duration(minutes: 5);
   static const Duration _wasteTypeTtl = Duration(minutes: 15);
   static const Duration _activityTtl = Duration(minutes: 2);
-
-  static const String _nasabahProfileColumns =
-      'id_nasabah,nama_lengkap,user_name,email,no_hp,alamat,saldo,'
-      'email_verified_at,google_id,photo_url,provider';
 
   static final Map<String, _CacheEntry<Map<String, dynamic>>> _profiles = {};
   static final Map<String, Future<Map<String, dynamic>?>> _profileInflight = {};
@@ -63,7 +60,7 @@ class AppCacheService {
       return existingRequest;
     }
 
-    final request = _fetchNasabahByEmail(email, normalizedEmail);
+    final request = _fetchNasabahByEmail(email);
     _profileInflight[normalizedEmail] = request;
 
     request.whenComplete(() => _profileInflight.remove(normalizedEmail));
@@ -120,32 +117,18 @@ class AppCacheService {
       );
     }
 
-    final offset = safePage * safePageSize;
-    dynamic query = Supabase.instance.client
-        .from('transaksi_setor')
-        .select(
-          'id_transaksi_setor,total_nilai,tanggal_setor,status,'
-          'detail_setor(berat_kg,harga_kg,subtotal,jenis_sampah(nama_jenis))',
-        )
-        .eq('id_nasabah', nasabahId);
-
-    if (pendingOnly) {
-      query = query.eq('status', 'pending');
-    } else if (from != null && to != null) {
-      query = query
-          .gte('tanggal_setor', _formatDateQuery(from))
-          .lte('tanggal_setor', _formatDateQuery(to));
-    }
-
-    final rows = await query
-        .order('tanggal_setor', ascending: false)
-        .range(offset, offset + safePageSize);
-    final pageRows = _copyList(_asMapList(rows));
-    final hasNext = pageRows.length > safePageSize;
-    final items = pageRows.take(safePageSize).toList();
+    final pageResult = await GreenPointApiService.fetchSetorHistoryPage(
+      nasabahId: nasabahId,
+      page: safePage,
+      pageSize: safePageSize,
+      from: from,
+      to: to,
+      pendingOnly: pendingOnly,
+    );
+    final items = _copyList(pageResult.items);
     final result = PagedCacheResult(
       items: items,
-      hasNextPage: hasNext,
+      hasNextPage: pageResult.hasNextPage,
       fromCache: false,
     );
 
@@ -185,32 +168,18 @@ class AppCacheService {
       );
     }
 
-    final offset = safePage * safePageSize;
-    dynamic query = Supabase.instance.client
-        .from('penarikan_saldo')
-        .select(
-          'id_penarikan,jenis_penukaran,nominal,status,'
-          'tanggal_pengajuan,deskripsi',
-        )
-        .eq('id_nasabah', nasabahId);
-
-    if (pendingOnly) {
-      query = query.eq('status', 'pending');
-    } else if (from != null && to != null) {
-      query = query
-          .gte('tanggal_pengajuan', _formatDateQuery(from))
-          .lte('tanggal_pengajuan', _formatDateQuery(to));
-    }
-
-    final rows = await query
-        .order('tanggal_pengajuan', ascending: false)
-        .range(offset, offset + safePageSize);
-    final pageRows = _copyList(_asMapList(rows));
-    final hasNext = pageRows.length > safePageSize;
-    final items = pageRows.take(safePageSize).toList();
+    final pageResult = await GreenPointApiService.fetchPpobTransactionPage(
+      nasabahId: nasabahId,
+      page: safePage,
+      pageSize: safePageSize,
+      from: from,
+      to: to,
+      pendingOnly: pendingOnly,
+    );
+    final items = _copyList(pageResult.items);
     final result = PagedCacheResult(
       items: items,
-      hasNextPage: hasNext,
+      hasNextPage: pageResult.hasNextPage,
       fromCache: false,
     );
 
@@ -255,47 +224,22 @@ class AppCacheService {
 
   static Future<Map<String, dynamic>?> _fetchNasabahByEmail(
     String rawEmail,
-    String normalizedEmail,
   ) async {
-    final candidates = <String>{rawEmail.trim(), normalizedEmail}
-      ..removeWhere((value) => value.isEmpty);
-
     try {
-      for (final candidate in candidates) {
-        final rows = await Supabase.instance.client
-            .from('nasabah')
-            .select(_nasabahProfileColumns)
-            .eq('email', candidate)
-            .limit(1);
-
-        if (rows.isNotEmpty) {
-          final profile = Map<String, dynamic>.from(rows.first);
-          putNasabahProfile(profile);
-          return Map<String, dynamic>.from(profile);
-        }
+      final profile = await GreenPointApiService.fetchNasabahByEmail(rawEmail);
+      if (profile != null) {
+        putNasabahProfile(profile);
+        return Map<String, dynamic>.from(profile);
       }
     } catch (e) {
-      debugPrint('Cached nasabah lookup failed: $e');
+      debugPrint('Cached nasabah lookup through Laravel failed: $e');
     }
 
     return null;
   }
 
   static Future<List<Map<String, dynamic>>> _fetchWasteTypes() async {
-    final rows = await Supabase.instance.client
-        .from('jenis_sampah')
-        .select('id_jenis_sampah, nama_jenis, harga_per_kg')
-        .order('nama_jenis', ascending: true);
-
-    final items = _asMapList(rows)
-        .map(
-          (item) => {
-            'id': item['id_jenis_sampah'] as int,
-            'name': item['nama_jenis'] as String,
-            'price': (item['harga_per_kg'] as num).toDouble(),
-          },
-        )
-        .toList();
+    final items = await GreenPointApiService.fetchWasteTypes();
 
     _wasteTypes = _CacheEntry(_copyList(items), DateTime.now());
     return _copyList(items);
@@ -319,17 +263,6 @@ class AppCacheService {
       from == null ? '-' : _formatDateQuery(from),
       to == null ? '-' : _formatDateQuery(to),
     ].join('|');
-  }
-
-  static List<Map<String, dynamic>> _asMapList(Object? rows) {
-    if (rows is! List) {
-      return const [];
-    }
-
-    return rows
-        .whereType<Map>()
-        .map((row) => Map<String, dynamic>.from(row))
-        .toList();
   }
 
   static List<Map<String, dynamic>> _copyList(

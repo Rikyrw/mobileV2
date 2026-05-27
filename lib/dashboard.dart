@@ -2,9 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:mob_2/email_verification_notice.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'services/app_cache_service.dart';
 import 'services/firebase_account_service.dart';
+import 'services/greenpoint_api_service.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -67,8 +67,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
       // Prefer route argument, otherwise use auth currentUser
       final firebaseUser = FirebaseAccountService.currentUser;
-      final user = Supabase.instance.client.auth.currentUser;
-      final email = emailArg ?? firebaseUser?.email ?? user?.email;
+      final email = emailArg ?? firebaseUser?.email;
       _currentEmail = email;
 
       if (email != null && email.isNotEmpty) {
@@ -130,13 +129,18 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final now = DateTime.now();
       final currentStart = DateTime(now.year, now.month, 1);
       final currentEnd = DateTime(now.year, now.month + 1, 0);
-      final stats = await _fetchDashboardStats(
-        nasabahId,
-        currentStart,
-        currentEnd,
+      final dashboard = await GreenPointApiService.fetchDashboard(
+        nasabahId: nasabahId,
+        from: currentStart,
+        to: currentEnd,
       );
-      final recentSetor = await _fetchRecentSetor(nasabahId);
-      final recentPpob = await _fetchRecentPpob(nasabahId);
+      final stats = _dashboardStatsFromMap(dashboard['stats']);
+      final recentSetor = _asMapList(
+        dashboard['recent_setor'],
+      ).map(_mapRecentSetorRow).toList();
+      final recentPpob = _asMapList(
+        dashboard['recent_ppob'],
+      ).map(_mapRecentPpobRow).toList();
 
       if (!mounted) return;
       setState(() {
@@ -151,140 +155,52 @@ class _DashboardScreenState extends State<DashboardScreen> {
     }
   }
 
-  Future<DashboardStats> _fetchDashboardStats(
-    int nasabahId,
-    DateTime from,
-    DateTime to,
-  ) async {
-    final fromDate = _formatDateQuery(from);
-    final toDate = _formatDateQuery(to);
-    final setorRowsRaw = await Supabase.instance.client
-        .from('transaksi_setor')
-        .select(
-          'id_transaksi_setor,total_nilai,status,'
-          'detail_setor(berat_kg,subtotal)',
-        )
-        .eq('id_nasabah', nasabahId)
-        .gte('tanggal_setor', fromDate)
-        .lte('tanggal_setor', toDate);
-
-    final ppobRowsRaw = await Supabase.instance.client
-        .from('penarikan_saldo')
-        .select('id_penarikan,jenis_penukaran,nominal,status,deskripsi')
-        .eq('id_nasabah', nasabahId)
-        .gte('tanggal_pengajuan', fromDate)
-        .lte('tanggal_pengajuan', toDate);
-
-    final setorRows = _asMapList(setorRowsRaw);
-    final ppobRows = _asMapList(ppobRowsRaw);
-
-    var totalWeightKg = 0.0;
-    var completedSetorValue = 0;
-    var waitingSetorCount = 0;
-    var completedSetorCount = 0;
-    var rejectedSetorCount = 0;
-
-    for (final row in setorRows) {
-      final bucket = _setorStatusBucket(row['status']);
-      switch (bucket) {
-        case DashboardSetorStatusBucket.waiting:
-          waitingSetorCount++;
-        case DashboardSetorStatusBucket.completed:
-          completedSetorCount++;
-          completedSetorValue += ((row['total_nilai'] as num?) ?? 0).round();
-        case DashboardSetorStatusBucket.rejected:
-          rejectedSetorCount++;
-        case null:
-          break;
-      }
-
-      final details = row['detail_setor'];
-      if (details is List) {
-        for (final detail in details.whereType<Map>()) {
-          totalWeightKg += (detail['berat_kg'] as num?)?.toDouble() ?? 0.0;
-        }
-      }
+  DashboardStats _dashboardStatsFromMap(Object? value) {
+    if (value is! Map) {
+      return DashboardStats.empty;
     }
 
-    var ppobCount = 0;
-    var ppobAmount = 0;
-    var withdrawalCount = 0;
-    var withdrawalAmount = 0;
-
-    for (final row in ppobRows) {
-      final nominal = ((row['nominal'] as num?) ?? 0).round();
-      if (_isPpobTransaction(row)) {
-        ppobCount++;
-        ppobAmount += nominal;
-      } else {
-        withdrawalCount++;
-        withdrawalAmount += nominal;
-      }
-    }
-
+    final map = Map<String, dynamic>.from(value);
     return DashboardStats(
-      setorCount: setorRows.length,
-      totalWeightKg: totalWeightKg,
-      completedSetorValue: completedSetorValue,
-      ppobCount: ppobCount,
-      ppobAmount: ppobAmount,
-      withdrawalCount: withdrawalCount,
-      withdrawalAmount: withdrawalAmount,
-      waitingSetorCount: waitingSetorCount,
-      completedSetorCount: completedSetorCount,
-      rejectedSetorCount: rejectedSetorCount,
+      setorCount: (map['setorCount'] as num?)?.round() ?? 0,
+      totalWeightKg: (map['totalWeightKg'] as num?)?.toDouble() ?? 0,
+      completedSetorValue: (map['completedSetorValue'] as num?)?.round() ?? 0,
+      ppobCount: (map['ppobCount'] as num?)?.round() ?? 0,
+      ppobAmount: (map['ppobAmount'] as num?)?.round() ?? 0,
+      withdrawalCount: (map['withdrawalCount'] as num?)?.round() ?? 0,
+      withdrawalAmount: (map['withdrawalAmount'] as num?)?.round() ?? 0,
+      waitingSetorCount: (map['waitingSetorCount'] as num?)?.round() ?? 0,
+      completedSetorCount: (map['completedSetorCount'] as num?)?.round() ?? 0,
+      rejectedSetorCount: (map['rejectedSetorCount'] as num?)?.round() ?? 0,
     );
   }
 
-  Future<List<DashboardSetorPreview>> _fetchRecentSetor(int nasabahId) async {
-    final rowsRaw = await Supabase.instance.client
-        .from('transaksi_setor')
-        .select(
-          'id_transaksi_setor,total_nilai,tanggal_setor,status,'
-          'detail_setor(berat_kg)',
-        )
-        .eq('id_nasabah', nasabahId)
-        .order('tanggal_setor', ascending: false)
-        .limit(3);
-
-    return _asMapList(rowsRaw).map((row) {
-      var weightKg = 0.0;
-      final details = row['detail_setor'];
-      if (details is List) {
-        for (final detail in details.whereType<Map>()) {
-          weightKg += (detail['berat_kg'] as num?)?.toDouble() ?? 0.0;
-        }
+  DashboardSetorPreview _mapRecentSetorRow(Map<String, dynamic> row) {
+    var weightKg = 0.0;
+    final details = row['detail_setor'];
+    if (details is List) {
+      for (final detail in details.whereType<Map>()) {
+        weightKg += (detail['berat_kg'] as num?)?.toDouble() ?? 0.0;
       }
+    }
 
-      return DashboardSetorPreview(
-        title: 'Setor #${row['id_transaksi_setor'] ?? '-'}',
-        subtitle: '${_formatWeight(weightKg)} - ${_statusLabel(row['status'])}',
-        amount: _formatRupiah(((row['total_nilai'] as num?) ?? 0).round()),
-        date: _formatShortDate(row['tanggal_setor']?.toString()),
-      );
-    }).toList();
+    return DashboardSetorPreview(
+      title: 'Setor #${row['id_transaksi_setor'] ?? '-'}',
+      subtitle: '${_formatWeight(weightKg)} - ${_statusLabel(row['status'])}',
+      amount: _formatRupiah(((row['total_nilai'] as num?) ?? 0).round()),
+      date: _formatShortDate(row['tanggal_setor']?.toString()),
+    );
   }
 
-  Future<List<DashboardPpobPreview>> _fetchRecentPpob(int nasabahId) async {
-    final rowsRaw = await Supabase.instance.client
-        .from('penarikan_saldo')
-        .select(
-          'id_penarikan,jenis_penukaran,nominal,status,'
-          'tanggal_pengajuan,deskripsi',
-        )
-        .eq('id_nasabah', nasabahId)
-        .order('tanggal_pengajuan', ascending: false)
-        .limit(8);
+  DashboardPpobPreview _mapRecentPpobRow(Map<String, dynamic> row) {
+    final product = (row['jenis_penukaran']?.toString() ?? '-').toUpperCase();
 
-    return _asMapList(rowsRaw).where(_isPpobTransaction).take(3).map((row) {
-      final product = (row['jenis_penukaran']?.toString() ?? '-').toUpperCase();
-      return DashboardPpobPreview(
-        title: product,
-        subtitle: _statusLabel(row['status']),
-        amount: _formatRupiah(((row['nominal'] as num?) ?? 0).round()),
-        date: _formatShortDate(row['tanggal_pengajuan']?.toString()),
-      );
-    }).toList();
+    return DashboardPpobPreview(
+      title: product,
+      subtitle: _statusLabel(row['status']),
+      amount: _formatRupiah(((row['nominal'] as num?) ?? 0).round()),
+      date: _formatShortDate(row['tanggal_pengajuan']?.toString()),
+    );
   }
 
   List<Map<String, dynamic>> _asMapList(Object? rows) {
@@ -296,65 +212,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         .whereType<Map>()
         .map((row) => Map<String, dynamic>.from(row))
         .toList();
-  }
-
-  DashboardSetorStatusBucket? _setorStatusBucket(Object? status) {
-    final value = status?.toString().trim().toLowerCase() ?? '';
-
-    if (value == 'pending' ||
-        value == 'menunggu' ||
-        value == 'diproses' ||
-        value == 'process') {
-      return DashboardSetorStatusBucket.waiting;
-    }
-
-    if (value == 'success' ||
-        value == 'approved' ||
-        value == 'berhasil' ||
-        value == 'selesai' ||
-        value == 'sukses') {
-      return DashboardSetorStatusBucket.completed;
-    }
-
-    if (value == 'rejected' ||
-        value == 'reject' ||
-        value == 'ditolak' ||
-        value == 'failed' ||
-        value == 'gagal' ||
-        value == 'cancelled' ||
-        value == 'canceled') {
-      return DashboardSetorStatusBucket.rejected;
-    }
-
-    return null;
-  }
-
-  bool _isPpobTransaction(Map<String, dynamic> row) {
-    final description = row['deskripsi']?.toString().trim().toLowerCase() ?? '';
-    if (description.startsWith('emoney:') ||
-        description.startsWith('pln:') ||
-        description.startsWith('pulsa:')) {
-      return true;
-    }
-
-    final type = row['jenis_penukaran']?.toString().trim().toLowerCase() ?? '';
-    return const {
-      'dana',
-      'gopay',
-      'ovo',
-      'shopeepay',
-      'linkaja',
-      'emoney',
-      'pln',
-      'pulsa',
-    }.contains(type);
-  }
-
-  String _formatDateQuery(DateTime date) {
-    final day = date.day.toString().padLeft(2, '0');
-    final month = date.month.toString().padLeft(2, '0');
-    final year = date.year.toString();
-    return '$year-$month-$day';
   }
 
   String _formatRupiah(int value) {
@@ -802,8 +659,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
         (googleId == null || googleId.isEmpty);
   }
 }
-
-enum DashboardSetorStatusBucket { waiting, completed, rejected }
 
 class DashboardStats {
   const DashboardStats({

@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'perbarui_profil.dart';
 import 'services/app_cache_service.dart';
@@ -63,8 +62,7 @@ class _ProfilScreenState extends State<ProfilScreen> {
 
       // Prefer route argument, otherwise use auth currentUser
       final firebaseUser = FirebaseAccountService.currentUser;
-      final user = Supabase.instance.client.auth.currentUser;
-      final email = emailArg ?? firebaseUser?.email ?? user?.email;
+      final email = emailArg ?? firebaseUser?.email;
       _currentEmail = email;
 
       if (email != null && email.isNotEmpty) {

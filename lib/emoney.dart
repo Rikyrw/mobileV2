@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'dashboard.dart';
 import 'services/app_cache_service.dart';
+import 'services/firebase_account_service.dart';
+import 'services/greenpoint_api_service.dart';
 
 class EmoneyScreen extends StatefulWidget {
   const EmoneyScreen({super.key});
@@ -63,8 +63,8 @@ class _EmoneyScreenState extends State<EmoneyScreen> {
       }
 
       // Prefer route argument, otherwise use auth currentUser
-      final user = Supabase.instance.client.auth.currentUser;
-      final email = emailArg ?? user?.email;
+      final firebaseUser = FirebaseAccountService.currentUser;
+      final email = emailArg ?? firebaseUser?.email;
       _currentEmail = email;
 
       if (email != null && email.isNotEmpty) {
@@ -73,7 +73,9 @@ class _EmoneyScreenState extends State<EmoneyScreen> {
         if (record != null) {
           final saldoValue = (record['saldo'] as num?)?.toDouble();
           setState(() {
-            _fetchedUserName = (record['nama_lengkap'] as String?) ?? (record['user_name'] as String?);
+            _fetchedUserName =
+                (record['nama_lengkap'] as String?) ??
+                (record['user_name'] as String?);
             _nasabahId = record['id_nasabah'] as int?;
             _saldo = saldoValue;
           });
@@ -103,7 +105,9 @@ class _EmoneyScreenState extends State<EmoneyScreen> {
     if (_submitting) return;
 
     final noTujuan = _noTujuanController.text.trim();
-    if (noTujuan.isEmpty || selectedKategori == null || selectedLayanan == null) {
+    if (noTujuan.isEmpty ||
+        selectedKategori == null ||
+        selectedLayanan == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Lengkapi semua data terlebih dahulu.')),
       );
@@ -119,46 +123,43 @@ class _EmoneyScreenState extends State<EmoneyScreen> {
 
     final nominal = int.tryParse(selectedKategori ?? '');
     if (nominal == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Nominal tidak valid.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Nominal tidak valid.')));
       return;
     }
 
     if ((_saldo ?? 0) < nominal) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Saldo tidak mencukupi.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Saldo tidak mencukupi.')));
       return;
     }
 
     setState(() => _submitting = true);
 
     try {
-      final today = DateTime.now().toIso8601String().split('T').first;
-      await Supabase.instance.client.from('penarikan_saldo').insert({
-        'id_nasabah': _nasabahId,
-        'jenis_penukaran': selectedLayanan,
-        'nominal': nominal,
-        'status': 'pending',
-        'tanggal_pengajuan': today,
-        'deskripsi': 'emoney:$noTujuan',
-      });
+      await GreenPointApiService.submitPpob(
+        nasabahId: _nasabahId!,
+        jenisPenukaran: selectedLayanan!,
+        nominal: nominal,
+        deskripsi: 'emoney:$noTujuan',
+      );
       AppCacheService.invalidateActivity();
 
-      if (mounted) {
-        setState(() {
-          selectedKategori = null;
-          selectedLayanan = null;
-          _noTujuanController.clear();
-        });
-      }
+      if (!mounted) return;
+      setState(() {
+        selectedKategori = null;
+        selectedLayanan = null;
+        _noTujuanController.clear();
+      });
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Permintaan berhasil dikirim.')),
       );
     } catch (e) {
       debugPrint('Submit emoney error: $e');
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Gagal memproses transaksi.')),
       );
@@ -192,9 +193,10 @@ class _EmoneyScreenState extends State<EmoneyScreen> {
                             color: Colors.white,
                           ),
                           onPressed: () {
-                            Navigator.of(
-                              context,
-                            ).pushReplacementNamed('/dashboard', arguments: {'email': _currentEmail});
+                            Navigator.of(context).pushReplacementNamed(
+                              '/dashboard',
+                              arguments: {'email': _currentEmail},
+                            );
                           },
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(),

@@ -4,12 +4,13 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import 'services/app_cache_service.dart';
 import 'services/external_url_opener.dart';
+import 'services/firebase_account_service.dart';
+import 'services/greenpoint_api_service.dart';
 
 class TopupSaldoScreen extends StatefulWidget {
   const TopupSaldoScreen({super.key});
@@ -62,8 +63,8 @@ class _TopupSaldoScreenState extends State<TopupSaldoScreen> {
         emailArg = args['email'] as String;
       }
 
-      final user = Supabase.instance.client.auth.currentUser;
-      final email = emailArg ?? user?.email;
+      final firebaseUser = FirebaseAccountService.currentUser;
+      final email = emailArg ?? firebaseUser?.email;
       _currentEmail = email;
 
       if (email != null && email.isNotEmpty) {
@@ -115,49 +116,11 @@ class _TopupSaldoScreenState extends State<TopupSaldoScreen> {
   Future<List<Map<String, dynamic>>> _fetchTopupHistoryRows(
     int nasabahId,
   ) async {
-    const orderColumns = <String?>[
-      'created_at',
-      'updated_at',
-      'transaction_time',
-      'tanggal_topup',
-      null,
-    ];
-    Object? lastError;
-
-    for (final orderColumn in orderColumns) {
-      try {
-        dynamic query = Supabase.instance.client
-            .from('topup_saldo')
-            .select('*')
-            .eq('id_nasabah', nasabahId);
-
-        if (_topupHistoryDate != null && orderColumn != null) {
-          final start = DateTime(
-            _topupHistoryDate!.year,
-            _topupHistoryDate!.month,
-            _topupHistoryDate!.day,
-          );
-          final end = start.add(const Duration(days: 1));
-          query = query
-              .gte(orderColumn, start.toUtc().toIso8601String())
-              .lt(orderColumn, end.toUtc().toIso8601String());
-        }
-
-        if (orderColumn != null) {
-          query = query.order(orderColumn, ascending: false);
-        }
-
-        final rows = await query.limit(5);
-        return (rows as List)
-            .map((row) => Map<String, dynamic>.from(row as Map))
-            .toList();
-      } catch (e) {
-        lastError = e;
-        debugPrint('Topup history order failed ($orderColumn): $e');
-      }
-    }
-
-    throw lastError ?? Exception('Topup history lookup failed.');
+    return GreenPointApiService.fetchTopupHistory(
+      nasabahId: nasabahId,
+      date: _topupHistoryDate,
+      limit: 5,
+    );
   }
 
   TopupHistoryItem _mapTopupHistoryItem(Map<String, dynamic> row) {
@@ -459,21 +422,16 @@ class _TopupSaldoScreenState extends State<TopupSaldoScreen> {
 
   Future<void> _checkTopupStatus(String orderId) async {
     try {
-      final res = await Supabase.instance.client
-          .from('topup_saldo')
-          .select('status,transaction_status,gross_amount')
-          .eq('order_id', orderId)
-          .limit(1);
+      final res = await GreenPointApiService.checkTopupStatus(orderId);
+      final status = (res['status'] as String?) ?? 'pending';
 
-      if (res.isEmpty) {
+      if (status == 'not_found') {
         _showSnack('Transaksi tidak ditemukan.');
         return;
       }
 
-      final row = res.first;
-      final status = (row['status'] as String?) ?? 'pending';
       final transactionStatus =
-          (row['transaction_status'] as String?) ?? status;
+          (res['transaction_status'] as String?) ?? status;
 
       if (transactionStatus == 'settlement' || transactionStatus == 'capture') {
         AppCacheService.invalidateNasabahByEmail(_currentEmail);

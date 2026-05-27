@@ -1,15 +1,12 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'services/app_cache_service.dart';
+import 'services/greenpoint_api_service.dart';
 
 class PerbaruiProfilScreen extends StatefulWidget {
   final Map<String, dynamic>? userData;
 
-  const PerbaruiProfilScreen({
-    super.key,
-    this.userData,
-  });
+  const PerbaruiProfilScreen({super.key, this.userData});
 
   @override
   State<PerbaruiProfilScreen> createState() => _PerbaruiProfilScreenState();
@@ -29,18 +26,12 @@ class _PerbaruiProfilScreenState extends State<PerbaruiProfilScreen> {
   void initState() {
     super.initState();
     // Initialize controllers dengan data yang ada
-    etNama = TextEditingController(
-      text: widget.userData?['nama'] ?? '',
-    );
+    etNama = TextEditingController(text: widget.userData?['nama'] ?? '');
     etUsername = TextEditingController(
       text: widget.userData?['username'] ?? '',
     );
-    etEmail = TextEditingController(
-      text: widget.userData?['email'] ?? '',
-    );
-    etAlamat = TextEditingController(
-      text: widget.userData?['alamat'] ?? '',
-    );
+    etEmail = TextEditingController(text: widget.userData?['email'] ?? '');
+    etAlamat = TextEditingController(text: widget.userData?['alamat'] ?? '');
     etNoHandphone = TextEditingController(
       text: widget.userData?['phone'] ?? '',
     );
@@ -85,26 +76,21 @@ class _PerbaruiProfilScreenState extends State<PerbaruiProfilScreen> {
   }
 
   bool _isValidEmail(String email) {
-    final emailRegex =
-        RegExp(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$');
+    final emailRegex = RegExp(
+      r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$',
+    );
     return emailRegex.hasMatch(email);
   }
 
   void _showError(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.red,
-      ),
+      SnackBar(content: Text(message), backgroundColor: Colors.red),
     );
   }
 
   void _showSuccess(String message) {
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message),
-        backgroundColor: Colors.green,
-      ),
+      SnackBar(content: Text(message), backgroundColor: Colors.green),
     );
   }
 
@@ -125,24 +111,18 @@ class _PerbaruiProfilScreenState extends State<PerbaruiProfilScreen> {
       final noHp = etNoHandphone.text.trim();
       final oldEmail = widget.userData?['email'] ?? '';
 
-      // Update data di Supabase
-      final response = await Supabase.instance.client
-          .from('nasabah')
-          .update({
-            'nama_lengkap': nama,
-            'user_name': username,
-            'email': email,
-            'alamat': alamat,
-            'no_hp': noHp,
-          })
-          .eq('email', oldEmail)
-          .select();
+      final response = await GreenPointApiService.updateProfile(
+        oldEmail: oldEmail.toString(),
+        fullName: nama,
+        userName: username,
+        email: email,
+        address: alamat,
+        phone: noHp,
+      );
 
-      if (response.isNotEmpty) {
+      if (response != null) {
         AppCacheService.invalidateNasabahByEmail(oldEmail.toString());
-        AppCacheService.putNasabahProfile(
-          Map<String, dynamic>.from(response.first),
-        );
+        AppCacheService.putNasabahProfile(response);
         _showSuccess('Profil berhasil diperbarui!');
         // Kembali ke screen profil dengan flag update
         if (mounted) {
@@ -277,9 +257,7 @@ class _PerbaruiProfilScreenState extends State<PerbaruiProfilScreen> {
                           ? null
                           : () => Navigator.of(context).pop(),
                       style: OutlinedButton.styleFrom(
-                        side: const BorderSide(
-                          color: Color(0xFF315A39),
-                        ),
+                        side: const BorderSide(color: Color(0xFF315A39)),
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8),
                         ),
@@ -329,32 +307,22 @@ class _PerbaruiProfilScreenState extends State<PerbaruiProfilScreen> {
           maxLines: maxLines,
           decoration: InputDecoration(
             hintText: hint,
-            hintStyle: const TextStyle(
-              color: Color(0xFFCCCCCC),
-              fontSize: 14,
-            ),
+            hintStyle: const TextStyle(color: Color(0xFFCCCCCC), fontSize: 14),
             contentPadding: const EdgeInsets.symmetric(
               horizontal: 16,
               vertical: 12,
             ),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(
-                color: Color(0xFFE0E0E0),
-              ),
+              borderSide: const BorderSide(color: Color(0xFFE0E0E0)),
             ),
             enabledBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(
-                color: Color(0xFFE0E0E0),
-              ),
+              borderSide: const BorderSide(color: Color(0xFFE0E0E0)),
             ),
             focusedBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(8),
-              borderSide: const BorderSide(
-                color: Color(0xFF315A39),
-                width: 2,
-              ),
+              borderSide: const BorderSide(color: Color(0xFF315A39), width: 2),
             ),
           ),
         ),

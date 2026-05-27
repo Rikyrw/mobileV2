@@ -19,7 +19,7 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(const MyApp());
+    await tester.pumpWidget(MyApp(appInitialization: Future<void>.value()));
     await tester.pump(const Duration(seconds: 5));
     await tester.pumpAndSettle();
 

@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'dashboard.dart';
 import 'services/app_cache_service.dart';
+import 'services/firebase_account_service.dart';
+import 'services/greenpoint_api_service.dart';
 
 class PlnScreen extends StatefulWidget {
   const PlnScreen({super.key});
@@ -60,8 +60,8 @@ class _PlnScreenState extends State<PlnScreen> {
       }
 
       // Prefer route argument, otherwise use auth currentUser
-      final user = Supabase.instance.client.auth.currentUser;
-      final email = emailArg ?? user?.email;
+      final firebaseUser = FirebaseAccountService.currentUser;
+      final email = emailArg ?? firebaseUser?.email;
       _currentEmail = email;
 
       if (email != null && email.isNotEmpty) {
@@ -70,7 +70,9 @@ class _PlnScreenState extends State<PlnScreen> {
         if (record != null) {
           final saldoValue = (record['saldo'] as num?)?.toDouble();
           setState(() {
-            _fetchedUserName = (record['nama_lengkap'] as String?) ?? (record['user_name'] as String?);
+            _fetchedUserName =
+                (record['nama_lengkap'] as String?) ??
+                (record['user_name'] as String?);
             _nasabahId = record['id_nasabah'] as int?;
             _saldo = saldoValue;
           });
@@ -116,31 +118,28 @@ class _PlnScreenState extends State<PlnScreen> {
 
     final nominal = int.tryParse(selectedNominal ?? '');
     if (nominal == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Nominal tidak valid.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Nominal tidak valid.')));
       return;
     }
 
     if ((_saldo ?? 0) < nominal) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Saldo tidak mencukupi.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Saldo tidak mencukupi.')));
       return;
     }
 
     setState(() => _submitting = true);
 
     try {
-      final today = DateTime.now().toIso8601String().split('T').first;
-      await Supabase.instance.client.from('penarikan_saldo').insert({
-        'id_nasabah': _nasabahId,
-        'jenis_penukaran': 'pln',
-        'nominal': nominal,
-        'status': 'pending',
-        'tanggal_pengajuan': today,
-        'deskripsi': 'pln:$noToken',
-      });
+      await GreenPointApiService.submitPpob(
+        nasabahId: _nasabahId!,
+        jenisPenukaran: 'pln',
+        nominal: nominal,
+        deskripsi: 'pln:$noToken',
+      );
       AppCacheService.invalidateActivity();
 
       if (mounted) {
@@ -179,12 +178,7 @@ class _PlnScreenState extends State<PlnScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Container(
-                padding: const EdgeInsetsDirectional.fromSTEB(
-                  20,
-                  40,
-                  20,
-                  30,
-                ),
+                padding: const EdgeInsetsDirectional.fromSTEB(20, 40, 20, 30),
                 decoration: const BoxDecoration(color: Color(0xFF315A39)),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -197,7 +191,10 @@ class _PlnScreenState extends State<PlnScreen> {
                             color: Colors.white,
                           ),
                           onPressed: () {
-                            Navigator.of(context).pushReplacementNamed('/dashboard', arguments: {'email': _currentEmail});
+                            Navigator.of(context).pushReplacementNamed(
+                              '/dashboard',
+                              arguments: {'email': _currentEmail},
+                            );
                           },
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(),

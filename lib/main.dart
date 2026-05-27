@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:mob_2/email_verification_notice.dart';
 import 'package:mob_2/emoney.dart';
@@ -31,11 +30,6 @@ Future<void> _initializeAppServices() async {
   }
 
   await _initializeFirebase();
-  await Supabase.initialize(
-    url: 'https://yugkzkxwddabkjzooswk.supabase.co',
-    anonKey:
-        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl1Z2t6a3h3ZGRhYmtqem9vc3drIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY4NjY5NzcsImV4cCI6MjA5MjQ0Mjk3N30.R8QcsDWjeAxwvR55BB8eDp-hi3GACpCW0qikV_uFxFc',
-  );
 }
 
 Future<bool> _initializeFirebase() async {

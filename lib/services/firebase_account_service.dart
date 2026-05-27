@@ -8,7 +8,6 @@ import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:mob_2/services/app_cache_service.dart';
 import 'package:mob_2/services/greenpoint_api_service.dart';
-import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 
 class EmailNotVerifiedException implements Exception {
   EmailNotVerifiedException(this.email);
@@ -21,12 +20,6 @@ class EmailNotVerifiedException implements Exception {
 
 class FirebaseAccountService {
   FirebaseAccountService._();
-
-  static const String _nasabahLookupColumns =
-      'id_nasabah,user_name,nama_lengkap,email,password,no_hp,alamat,photo_url,'
-      'google_id,provider,saldo,email_verified_at,'
-      'email_verification_token_hash,email_verification_expires_at,'
-      'email_verification_sent_at';
 
   static FirebaseAuth get _auth => FirebaseAuth.instance;
   static FirebaseFirestore get _firestore => FirebaseFirestore.instance;
@@ -290,12 +283,6 @@ class FirebaseAccountService {
       debugPrint('Google sign-out skipped: $e');
     }
 
-    try {
-      await Supabase.instance.client.auth.signOut();
-    } catch (e) {
-      debugPrint('Supabase sign-out skipped: $e');
-    }
-
     if (_isFirebaseReady) {
       await _auth.signOut();
     }
@@ -316,12 +303,6 @@ class FirebaseAccountService {
       try {
         await _buildGoogleSignIn(requireWebClientId: false).signOut();
       } catch (_) {}
-    }
-
-    try {
-      await Supabase.instance.client.auth.signOut();
-    } catch (e) {
-      debugPrint('Supabase account switch sign-out skipped: $e');
     }
 
     if (_isFirebaseReady) {
@@ -484,19 +465,13 @@ class FirebaseAccountService {
     }
 
     try {
-      final existingRows = await Supabase.instance.client
-          .from('nasabah')
-          .select('id_nasabah')
-          .eq('email', value)
-          .limit(1);
-
-      if (existingRows.isNotEmpty) {
+      if (await GreenPointApiService.emailExists(value)) {
         throw FirebaseAuthException(code: 'email-already-in-use');
       }
     } on FirebaseAuthException {
       rethrow;
     } catch (e) {
-      debugPrint('Supabase email availability lookup skipped: $e');
+      debugPrint('Laravel email availability lookup skipped: $e');
     }
   }
 
@@ -601,60 +576,27 @@ class FirebaseAccountService {
     }
 
     try {
-      final client = Supabase.instance.client;
-      final existing = await client
-          .from('nasabah')
-          .select('id_nasabah,saldo')
-          .eq('email', email)
-          .limit(1);
+      final mirrored = await GreenPointApiService.mirrorNasabahProfile(
+        firebaseUid: user.uid,
+        email: email,
+        userName: _text(profile['user_name']) ?? email.split('@').first,
+        fullName: _text(profile['nama_lengkap']) ?? email.split('@').first,
+        phone: _text(profile['no_hp']),
+        address: _text(profile['alamat']) ?? '',
+        photoUrl: _text(profile['photo_url']),
+        googleId: _text(profile['google_id']),
+        provider: _text(profile['provider']),
+        balance: profile['saldo'] as num? ?? 0,
+      );
 
-      final payload = <String, dynamic>{
-        'user_name': _text(profile['user_name']) ?? email.split('@').first,
-        'nama_lengkap':
-            _text(profile['nama_lengkap']) ?? email.split('@').first,
-        'email': email,
-        'no_hp': _text(profile['no_hp']),
-        'status': 'aktif',
-        'saldo': profile['saldo'] ?? 0,
-        'alamat': _text(profile['alamat']) ?? '',
-        'photo_url': _text(profile['photo_url']),
-        'google_id': _text(profile['google_id']),
-        'provider': _text(profile['provider']),
-      };
-
-      if (_text(profile['provider']) == 'google' ||
-          _text(profile['google_id']) != null) {
-        payload['email_verified_at'] = DateTime.now().toUtc().toIso8601String();
-        payload['email_verification_token_hash'] = null;
-        payload['email_verification_expires_at'] = null;
+      final currentBalance = mirrored?['saldo'] as num?;
+      if (currentBalance != null) {
+        await _users.doc(user.uid).set({
+          'saldo': currentBalance,
+        }, SetOptions(merge: true));
       }
-
-      payload.removeWhere((key, value) => value == null);
-
-      if (existing.isNotEmpty) {
-        final existingProfile = Map<String, dynamic>.from(existing.first);
-        final currentBalance = existingProfile['saldo'] as num?;
-        final profilePayload = Map<String, dynamic>.from(payload)
-          ..remove('saldo');
-
-        // Saldo adalah data transaksi di Supabase; jangan timpa dengan
-        // saldo lama dari Firestore saat mirror profil berjalan.
-        await client.from('nasabah').update(profilePayload).eq('email', email);
-        if (currentBalance != null) {
-          await _users.doc(user.uid).set({
-            'saldo': currentBalance,
-          }, SetOptions(merge: true));
-        }
-        return;
-      }
-
-      await client.from('nasabah').insert({
-        ...payload,
-        'created_at': DateTime.now().toUtc().toIso8601String(),
-        'password': 'firebase-auth:${user.uid}',
-      });
     } catch (e) {
-      debugPrint('Supabase nasabah mirror skipped: $e');
+      debugPrint('Laravel nasabah mirror skipped: $e');
     }
   }
 
@@ -853,56 +795,12 @@ class FirebaseAccountService {
     }
 
     try {
-      final client = Supabase.instance.client;
-
-      if (includeEmailMatch) {
-        final emailCandidates = <String>{value, value.toLowerCase()};
-        for (final candidate in emailCandidates) {
-          final emailRows = await client
-              .from('nasabah')
-              .select(_nasabahLookupColumns)
-              .eq('email', candidate)
-              .limit(1);
-
-          if (emailRows.isNotEmpty) {
-            return Map<String, dynamic>.from(emailRows.first);
-          }
-        }
-
-        if (value.contains('@')) {
-          final emailRows = await client
-              .from('nasabah')
-              .select(_nasabahLookupColumns)
-              .ilike('email', value)
-              .limit(1);
-
-          if (emailRows.isNotEmpty) {
-            return Map<String, dynamic>.from(emailRows.first);
-          }
-        }
-      }
-
-      final userNameRows = await client
-          .from('nasabah')
-          .select(_nasabahLookupColumns)
-          .eq('user_name', value)
-          .limit(1);
-
-      if (userNameRows.isNotEmpty) {
-        return Map<String, dynamic>.from(userNameRows.first);
-      }
-
-      final userNameInsensitiveRows = await client
-          .from('nasabah')
-          .select(_nasabahLookupColumns)
-          .ilike('user_name', value)
-          .limit(1);
-
-      if (userNameInsensitiveRows.isNotEmpty) {
-        return Map<String, dynamic>.from(userNameInsensitiveRows.first);
-      }
+      return await GreenPointApiService.lookupNasabah(
+        value,
+        includeEmailMatch: includeEmailMatch,
+      );
     } catch (e) {
-      debugPrint('Supabase nasabah lookup skipped: $e');
+      debugPrint('Laravel nasabah lookup skipped: $e');
     }
 
     return null;
@@ -913,12 +811,12 @@ class FirebaseAccountService {
     required String firebaseUid,
   }) async {
     try {
-      await Supabase.instance.client
-          .from('nasabah')
-          .update({'password': 'firebase-auth:$firebaseUid'})
-          .eq('email', email);
+      await GreenPointApiService.markPasswordManagedByFirebase(
+        email: email,
+        firebaseUid: firebaseUid,
+      );
     } catch (e) {
-      debugPrint('Supabase password marker update skipped: $e');
+      debugPrint('Laravel password marker update skipped: $e');
     }
   }
 

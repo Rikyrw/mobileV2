@@ -2,9 +2,10 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'services/app_cache_service.dart';
+import 'services/firebase_account_service.dart';
+import 'services/greenpoint_api_service.dart';
 import 'services/waste_photo_validation_service.dart';
 
 class SetorSampahScreen extends StatefulWidget {
@@ -16,7 +17,6 @@ class SetorSampahScreen extends StatefulWidget {
 
 class _SetorSampahScreenState extends State<SetorSampahScreen> {
   static const int _maxPhotosPerItem = 3;
-  static const String _photoBucket = 'sampah';
   final TextEditingController _namaController = TextEditingController();
   final TextEditingController _alamatController = TextEditingController();
   bool _showAjukanButton = false;
@@ -70,8 +70,8 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
       }
 
       // Prefer route argument, otherwise use auth currentUser
-      final user = Supabase.instance.client.auth.currentUser;
-      final email = emailArg ?? user?.email;
+      final firebaseUser = FirebaseAccountService.currentUser;
+      final email = emailArg ?? firebaseUser?.email;
       _currentEmail = email;
 
       if (email != null && email.isNotEmpty) {
@@ -796,41 +796,20 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
     setState(() => _submitting = true);
 
     try {
-      final tanggalSetor = DateTime.now().toIso8601String().split('T').first;
-      final transaksi = await Supabase.instance.client
-          .from('transaksi_setor')
-          .insert({
-            'id_nasabah': nasabahId,
-            'total_nilai': totalNilai,
-            'tanggal_setor': tanggalSetor,
-            'status': 'pending',
-          })
-          .select('id_transaksi_setor')
-          .single();
-
-      final transaksiId = transaksi['id_transaksi_setor'] as int;
-      final fotoUrls = await _uploadPhotos(nasabahId, selectedItems);
-      if (fotoUrls.isNotEmpty) {
-        final fotoRows = fotoUrls
-            .map((url) => {'id_transaksi_setor': transaksiId, 'foto_url': url})
-            .toList();
-        await Supabase.instance.client.from('foto_setor').insert(fotoRows);
-      }
-
-      final detailRows = selectedItems.map((item) {
+      final setorItems = selectedItems.map((item) {
         final raw = item.weightController.text.replaceAll(',', '.').trim();
         final weight = double.tryParse(raw) ?? 0.0;
-        final subtotal = item.price * weight;
-        return {
-          'id_transaksi_setor': transaksiId,
-          'id_jenis': item.jenisId,
-          'berat_kg': weight,
-          'harga_kg': item.price,
-          'subtotal': subtotal,
-        };
+        return GreenPointSetorItem(
+          idJenis: item.jenisId,
+          beratKg: weight,
+          photos: item.images,
+        );
       }).toList();
 
-      await Supabase.instance.client.from('detail_setor').insert(detailRows);
+      await GreenPointApiService.submitSetorSampah(
+        nasabahId: nasabahId,
+        items: setorItems,
+      );
       AppCacheService.invalidateActivity();
 
       if (!mounted) return;
@@ -864,39 +843,6 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
     final s = value.toString();
     final reg = RegExp(r"\B(?=(\d{3})+(?!\d))");
     return 'Rp ${s.replaceAllMapped(reg, (m) => '.')}';
-  }
-
-  Future<List<String>> _uploadPhotos(
-    int nasabahId,
-    List<WasteItem> items,
-  ) async {
-    final storage = Supabase.instance.client.storage.from(_photoBucket);
-    final urls = <String>[];
-    final stamp = DateTime.now().millisecondsSinceEpoch;
-
-    for (final item in items) {
-      for (var i = 0; i < item.images.length; i++) {
-        final image = item.images[i];
-        final bytes = await image.readAsBytes();
-        final ext = _getFileExtension(image.path);
-        final path = 'setor/$nasabahId/${stamp}_${item.jenisId}_$i.$ext';
-        await storage.uploadBinary(
-          path,
-          bytes,
-          fileOptions: FileOptions(contentType: image.mimeType ?? 'image/jpeg'),
-        );
-        final publicUrl = storage.getPublicUrl(path);
-        urls.add(publicUrl);
-      }
-    }
-
-    return urls;
-  }
-
-  String _getFileExtension(String path) {
-    final dot = path.lastIndexOf('.');
-    if (dot == -1 || dot == path.length - 1) return 'jpg';
-    return path.substring(dot + 1).toLowerCase();
   }
 
   void _showAddWasteDialog() {
