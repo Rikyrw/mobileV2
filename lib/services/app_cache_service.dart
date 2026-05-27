@@ -40,9 +40,9 @@ class AppCacheService {
   static Future<List<Map<String, dynamic>>>? _wasteTypesInflight;
 
   static final Map<String, _CacheEntry<PagedCacheResult<Map<String, dynamic>>>>
-      _setorHistoryPages = {};
+  _setorHistoryPages = {};
   static final Map<String, _CacheEntry<PagedCacheResult<Map<String, dynamic>>>>
-      _ppobTransactionPages = {};
+  _ppobTransactionPages = {};
 
   static Future<Map<String, dynamic>?> fetchNasabahByEmail(
     String email, {
@@ -154,7 +154,7 @@ class AppCacheService {
   }
 
   static Future<PagedCacheResult<Map<String, dynamic>>>
-      fetchPpobTransactionPage({
+  fetchPpobTransactionPage({
     required int nasabahId,
     required int page,
     required int pageSize,
@@ -245,14 +245,20 @@ class AppCacheService {
     _ppobTransactionPages.clear();
   }
 
+  static void invalidateAll() {
+    _profiles.clear();
+    _profileInflight.clear();
+    _wasteTypes = null;
+    _wasteTypesInflight = null;
+    invalidateActivity();
+  }
+
   static Future<Map<String, dynamic>?> _fetchNasabahByEmail(
     String rawEmail,
     String normalizedEmail,
   ) async {
-    final candidates = <String>{
-      rawEmail.trim(),
-      normalizedEmail,
-    }..removeWhere((value) => value.isEmpty);
+    final candidates = <String>{rawEmail.trim(), normalizedEmail}
+      ..removeWhere((value) => value.isEmpty);
 
     try {
       for (final candidate in candidates) {
@@ -326,7 +332,9 @@ class AppCacheService {
         .toList();
   }
 
-  static List<Map<String, dynamic>> _copyList(List<Map<String, dynamic>> items) {
+  static List<Map<String, dynamic>> _copyList(
+    List<Map<String, dynamic>> items,
+  ) {
     return items.map((item) => Map<String, dynamic>.from(item)).toList();
   }
 

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:mob_2/email_verification_notice.dart';
@@ -39,6 +40,15 @@ Future<void> _initializeAppServices() async {
 
 Future<bool> _initializeFirebase() async {
   try {
+    if (!kIsWeb) {
+      try {
+        await Firebase.initializeApp();
+        return true;
+      } catch (e) {
+        debugPrint('Native Firebase initialization skipped: $e');
+      }
+    }
+
     final options = _firebaseOptionsFromEnv();
     if (options == null) {
       debugPrint(

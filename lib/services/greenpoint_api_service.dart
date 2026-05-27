@@ -49,8 +49,22 @@ class GreenPointApiService {
     await _post('/mobile/nasabah/email-verification/resend', {'email': email});
   }
 
-  static Future<void> sendPasswordReset(String identifier) async {
-    await _post('/mobile/nasabah/password-reset', {'identifier': identifier});
+  static Future<void> sendPasswordReset(
+    String identifier, {
+    String? email,
+  }) async {
+    final normalizedIdentifier = identifier.trim();
+    final emailCandidate =
+        _emailCandidate(email) ?? _emailCandidate(normalizedIdentifier);
+    final body = <String, dynamic>{'identifier': normalizedIdentifier};
+
+    if (emailCandidate != null) {
+      body['email'] = emailCandidate;
+    } else if (normalizedIdentifier.isNotEmpty) {
+      body['username'] = normalizedIdentifier;
+    }
+
+    await _post('/mobile/nasabah/password-reset', body);
   }
 
   static Future<Map<String, dynamic>> verifyManualLogin({
@@ -134,5 +148,14 @@ class GreenPointApiService {
     }
 
     return 'Request GreenPoint gagal (HTTP $statusCode).';
+  }
+
+  static String? _emailCandidate(String? value) {
+    final text = value?.trim().toLowerCase();
+    if (text == null || text.isEmpty || !text.contains('@')) {
+      return null;
+    }
+
+    return text;
   }
 }

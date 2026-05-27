@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'email_verification_notice.dart';
 import 'services/firebase_account_service.dart';
-import 'services/greenpoint_api_service.dart';
 import 'sign_up.dart';
 import 'widgets/google_auth_button.dart';
 
@@ -101,7 +100,7 @@ class _SignInScreenState extends State<SignInScreen> {
     });
 
     try {
-      await GreenPointApiService.sendPasswordReset(identifier);
+      await FirebaseAccountService.sendPasswordResetForIdentifier(identifier);
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

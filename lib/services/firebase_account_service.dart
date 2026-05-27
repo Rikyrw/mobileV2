@@ -1,10 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:bcrypt/bcrypt.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:mob_2/services/app_cache_service.dart';
 import 'package:mob_2/services/greenpoint_api_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide User;
 
@@ -19,6 +21,12 @@ class EmailNotVerifiedException implements Exception {
 
 class FirebaseAccountService {
   FirebaseAccountService._();
+
+  static const String _nasabahLookupColumns =
+      'id_nasabah,user_name,nama_lengkap,email,password,no_hp,alamat,photo_url,'
+      'google_id,provider,saldo,email_verified_at,'
+      'email_verification_token_hash,email_verification_expires_at,'
+      'email_verification_sent_at';
 
   static FirebaseAuth get _auth => FirebaseAuth.instance;
   static FirebaseFirestore get _firestore => FirebaseFirestore.instance;
@@ -52,6 +60,8 @@ class FirebaseAccountService {
     required String password,
   }) async {
     _ensureFirebaseReady();
+    await _clearCurrentSessionForAccountSwitch();
+
     final mirroredRecord = await _findNasabahByIdentifier(identifier);
     if (_emailNeedsVerification(mirroredRecord)) {
       throw EmailNotVerifiedException(
@@ -146,11 +156,24 @@ class FirebaseAccountService {
   }
 
   static Future<void> sendPasswordResetForIdentifier(String identifier) async {
-    await GreenPointApiService.sendPasswordReset(identifier);
+    final normalizedIdentifier = identifier.trim();
+    String? email;
+
+    try {
+      email = await _resolveEmail(normalizedIdentifier);
+    } catch (e) {
+      debugPrint('Password reset email lookup skipped: $e');
+    }
+
+    await GreenPointApiService.sendPasswordReset(
+      normalizedIdentifier,
+      email: email,
+    );
   }
 
   static Future<UserCredential?> signInWithGoogle() async {
     _ensureFirebaseReady();
+    await _clearCurrentSessionForAccountSwitch(disconnectGoogle: !kIsWeb);
 
     if (kIsWeb) {
       final provider = GoogleAuthProvider()
@@ -259,6 +282,8 @@ class FirebaseAccountService {
   }
 
   static Future<void> signOut() async {
+    AppCacheService.invalidateAll();
+
     try {
       await _buildGoogleSignIn(requireWebClientId: false).signOut();
     } catch (e) {
@@ -274,6 +299,36 @@ class FirebaseAccountService {
     if (_isFirebaseReady) {
       await _auth.signOut();
     }
+  }
+
+  static Future<void> _clearCurrentSessionForAccountSwitch({
+    bool disconnectGoogle = false,
+  }) async {
+    try {
+      final googleSignIn = _buildGoogleSignIn(requireWebClientId: false);
+      if (disconnectGoogle) {
+        await googleSignIn.disconnect();
+      } else {
+        await googleSignIn.signOut();
+      }
+    } catch (e) {
+      debugPrint('Google account switch sign-out skipped: $e');
+      try {
+        await _buildGoogleSignIn(requireWebClientId: false).signOut();
+      } catch (_) {}
+    }
+
+    try {
+      await Supabase.instance.client.auth.signOut();
+    } catch (e) {
+      debugPrint('Supabase account switch sign-out skipped: $e');
+    }
+
+    if (_isFirebaseReady) {
+      await _auth.signOut();
+    }
+
+    AppCacheService.invalidateAll();
   }
 
   static String messageForError(Object error) {
@@ -651,10 +706,12 @@ class FirebaseAccountService {
       return null;
     }
 
-    final verifiedUser = await _verifyManualLoginWithBackend(
-      identifier: identifier,
-      password: password,
-    );
+    final verifiedUser =
+        await _verifyManualLoginWithBackend(
+          identifier: identifier,
+          password: password,
+        ) ??
+        await _verifyManualLoginLocally(record: record, password: password);
 
     if (verifiedUser == null) {
       return null;
@@ -753,6 +810,31 @@ class FirebaseAccountService {
     }
   }
 
+  static Future<Map<String, dynamic>?> _verifyManualLoginLocally({
+    required Map<String, dynamic> record,
+    required String password,
+  }) async {
+    final storedPassword = _text(record['password']);
+    if (storedPassword == null || _isFirebaseBackedPassword(storedPassword)) {
+      return null;
+    }
+
+    try {
+      if (_isBcryptHash(storedPassword) &&
+          BCrypt.checkpw(password, storedPassword)) {
+        return record;
+      }
+
+      if (!_isBcryptHash(storedPassword) && storedPassword == password) {
+        return record;
+      }
+    } catch (e) {
+      debugPrint('Local legacy password verification skipped: $e');
+    }
+
+    return null;
+  }
+
   static Future<String?> _findMirroredEmailByUsername(String userName) async {
     final record = await _findNasabahByIdentifier(
       userName,
@@ -778,10 +860,20 @@ class FirebaseAccountService {
         for (final candidate in emailCandidates) {
           final emailRows = await client
               .from('nasabah')
-              .select(
-                'id_nasabah,user_name,nama_lengkap,email,password,no_hp,alamat,photo_url,google_id,provider,saldo,email_verified_at,email_verification_token_hash,email_verification_expires_at,email_verification_sent_at',
-              )
+              .select(_nasabahLookupColumns)
               .eq('email', candidate)
+              .limit(1);
+
+          if (emailRows.isNotEmpty) {
+            return Map<String, dynamic>.from(emailRows.first);
+          }
+        }
+
+        if (value.contains('@')) {
+          final emailRows = await client
+              .from('nasabah')
+              .select(_nasabahLookupColumns)
+              .ilike('email', value)
               .limit(1);
 
           if (emailRows.isNotEmpty) {
@@ -792,14 +884,22 @@ class FirebaseAccountService {
 
       final userNameRows = await client
           .from('nasabah')
-          .select(
-            'id_nasabah,user_name,nama_lengkap,email,password,no_hp,alamat,photo_url,google_id,provider,saldo,email_verified_at,email_verification_token_hash,email_verification_expires_at,email_verification_sent_at',
-          )
+          .select(_nasabahLookupColumns)
           .eq('user_name', value)
           .limit(1);
 
       if (userNameRows.isNotEmpty) {
         return Map<String, dynamic>.from(userNameRows.first);
+      }
+
+      final userNameInsensitiveRows = await client
+          .from('nasabah')
+          .select(_nasabahLookupColumns)
+          .ilike('user_name', value)
+          .limit(1);
+
+      if (userNameInsensitiveRows.isNotEmpty) {
+        return Map<String, dynamic>.from(userNameInsensitiveRows.first);
       }
     } catch (e) {
       debugPrint('Supabase nasabah lookup skipped: $e');
@@ -830,6 +930,12 @@ class FirebaseAccountService {
 
   static bool _isFirebasePendingPassword(String? value) {
     return value == 'firebase-auth-pending';
+  }
+
+  static bool _isBcryptHash(String value) {
+    return value.startsWith(r'$2a$') ||
+        value.startsWith(r'$2b$') ||
+        value.startsWith(r'$2y$');
   }
 
   static bool _emailNeedsVerification(Map<String, dynamic>? record) {
