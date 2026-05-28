@@ -271,9 +271,8 @@ class TopupSaldoViewModel extends ChangeNotifier {
         final response = await http
             .post(
               Uri.parse(apiUrl),
-              headers: const {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
+              headers: {
+                ...GreenPointApiService.jsonHeaders,
                 'X-Requested-With': 'XMLHttpRequest',
               },
               body: body,

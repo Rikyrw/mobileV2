@@ -75,12 +75,12 @@ class SignInViewModel extends ChangeNotifier {
 
     _setLoading(true);
     try {
-      final credential = await FirebaseAccountService.signInWithEmailOrUsername(
+      final user = await FirebaseAccountService.signInWithEmailOrUsername(
         identifier: identifier.trim(),
         password: password,
       );
 
-      return SignInResult.success(email: credential.user?.email);
+      return SignInResult.success(email: user['email']?.toString());
     } catch (e) {
       if (FirebaseAccountService.isEmailNotVerifiedError(e)) {
         return SignInResult.emailVerificationRequired(

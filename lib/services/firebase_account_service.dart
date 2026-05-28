@@ -48,7 +48,80 @@ class FirebaseAccountService {
     return error is EmailNotVerifiedException ? error.email : null;
   }
 
-  static Future<UserCredential> signInWithEmailOrUsername({
+  static Future<Map<String, dynamic>> signInWithEmailOrUsername({
+    required String identifier,
+    required String password,
+  }) async {
+    await _clearCurrentSessionForAccountSwitch();
+
+    try {
+      final user = await GreenPointApiService.verifyManualLogin(
+        identifier: identifier,
+        password: password,
+      );
+      AppCacheService.invalidateAll();
+      return user;
+    } on GreenPointApiException catch (error) {
+      if (error.statusCode == 403 &&
+          error.message.toLowerCase().contains('email belum diverifikasi')) {
+        final email = error.data?['email']?.toString();
+        throw EmailNotVerifiedException(email ?? identifier.trim());
+      }
+
+      if (error.statusCode == 401) {
+        return _signInWithFirebaseAndIssueLaravelToken(
+          identifier: identifier,
+          password: password,
+        );
+      }
+
+      rethrow;
+    }
+  }
+
+  static Future<Map<String, dynamic>> _signInWithFirebaseAndIssueLaravelToken({
+    required String identifier,
+    required String password,
+  }) async {
+    final credential = await signInWithFirebaseEmailOrUsername(
+      identifier: identifier,
+      password: password,
+    );
+    final user = credential.user;
+    final email = user?.email?.trim().toLowerCase();
+
+    if (email == null || email.isEmpty) {
+      throw FirebaseAuthException(
+        code: 'missing-email',
+        message: 'Akun tidak memiliki email.',
+      );
+    }
+
+    if (GreenPointApiService.accessToken == null ||
+        GreenPointApiService.accessToken!.isEmpty) {
+      throw GreenPointApiException(
+        'Login Firebase berhasil, tetapi token API GreenPoint belum diterima. Coba login ulang.',
+        statusCode: 401,
+      );
+    }
+
+    try {
+      final profile = await GreenPointApiService.fetchNasabahByEmail(email);
+      if (profile != null) {
+        return profile;
+      }
+    } catch (e) {
+      debugPrint('Laravel profile refresh after Firebase login skipped: $e');
+    }
+
+    return {
+      'email': email,
+      'nama_lengkap': user?.displayName,
+      'photo_url': user?.photoURL,
+    };
+  }
+
+  static Future<UserCredential> signInWithFirebaseEmailOrUsername({
     required String identifier,
     required String password,
   }) async {
@@ -278,6 +351,13 @@ class FirebaseAccountService {
     AppCacheService.invalidateAll();
 
     try {
+      await GreenPointApiService.logout();
+    } catch (e) {
+      GreenPointApiService.clearAuthToken();
+      debugPrint('Laravel token logout skipped: $e');
+    }
+
+    try {
       await _buildGoogleSignIn(requireWebClientId: false).signOut();
     } catch (e) {
       debugPrint('Google sign-out skipped: $e');
@@ -291,6 +371,8 @@ class FirebaseAccountService {
   static Future<void> _clearCurrentSessionForAccountSwitch({
     bool disconnectGoogle = false,
   }) async {
+    GreenPointApiService.clearAuthToken();
+
     try {
       final googleSignIn = _buildGoogleSignIn(requireWebClientId: false);
       if (disconnectGoogle) {
@@ -315,6 +397,10 @@ class FirebaseAccountService {
   static String messageForError(Object error) {
     if (error is EmailNotVerifiedException) {
       return 'Email belum diverifikasi. Cek email Anda atau kirim ulang link verifikasi.';
+    }
+
+    if (error is GreenPointApiException) {
+      return error.message;
     }
 
     if (error is FirebaseAuthException) {

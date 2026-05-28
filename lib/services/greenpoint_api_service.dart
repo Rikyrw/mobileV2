@@ -6,9 +6,11 @@ import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 
 class GreenPointApiException implements Exception {
-  GreenPointApiException(this.message);
+  GreenPointApiException(this.message, {this.statusCode, this.data});
 
   final String message;
+  final int? statusCode;
+  final Map<String, dynamic>? data;
 
   @override
   String toString() => message;
@@ -36,6 +38,8 @@ class GreenPointSetorItem {
 class GreenPointApiService {
   GreenPointApiService._();
 
+  static String? _accessToken;
+
   static String get _baseUrl {
     final configured = dotenv.env['GREENPOINT_API_BASE_URL']?.trim();
     final base = (configured == null || configured.isEmpty)
@@ -43,6 +47,28 @@ class GreenPointApiService {
         : configured;
 
     return base.endsWith('/') ? base.substring(0, base.length - 1) : base;
+  }
+
+  static String? get accessToken => _accessToken;
+
+  static Map<String, String> get jsonHeaders {
+    return {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+      if (_accessToken != null && _accessToken!.isNotEmpty)
+        'Authorization': 'Bearer $_accessToken',
+    };
+  }
+
+  static void clearAuthToken() {
+    _accessToken = null;
+  }
+
+  static void _storeAuthToken(Map<String, dynamic> response) {
+    final token = response['access_token']?.toString().trim();
+    if (token != null && token.isNotEmpty) {
+      _accessToken = token;
+    }
   }
 
   static Future<void> registerNasabah({
@@ -70,6 +96,7 @@ class GreenPointApiService {
       'email': email.trim().toLowerCase(),
     });
     final data = response['data'];
+    _storeAuthToken(response);
 
     return data is Map ? Map<String, dynamic>.from(data) : null;
   }
@@ -141,9 +168,11 @@ class GreenPointApiService {
         'google_id': googleId,
         'provider': provider,
         'saldo': balance,
+        'device_name': 'greenpoint-mobile',
       }..removeWhere((_, value) => value == null),
     );
     final data = response['data'];
+    _storeAuthToken(response);
 
     return data is Map ? Map<String, dynamic>.from(data) : null;
   }
@@ -187,10 +216,27 @@ class GreenPointApiService {
     final response = await _post('/mobile/nasabah/verify-login', {
       'identifier': identifier,
       'password': password,
+      'device_name': 'greenpoint-mobile',
     });
+    _storeAuthToken(response);
     final user = response['user'];
 
     return user is Map<String, dynamic> ? user : <String, dynamic>{};
+  }
+
+  static Future<void> logout() async {
+    if (_accessToken == null || _accessToken!.isEmpty) {
+      clearAuthToken();
+      return;
+    }
+
+    try {
+      await _post('/mobile/nasabah/logout', {
+        'device_name': 'greenpoint-mobile',
+      });
+    } finally {
+      clearAuthToken();
+    }
   }
 
   static Future<List<Map<String, dynamic>>> fetchWasteTypes() async {
@@ -352,10 +398,7 @@ class GreenPointApiService {
     ).replace(queryParameters: queryParameters);
 
     try {
-      final headers = const {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-      };
+      final headers = jsonHeaders;
       final encodedBody = body == null ? null : jsonEncode(body);
       final request = switch (method) {
         'GET' => http.get(uri, headers: headers),
@@ -369,6 +412,8 @@ class GreenPointApiService {
       if (response.statusCode < 200 || response.statusCode >= 300) {
         throw GreenPointApiException(
           _messageFrom(decoded, response.statusCode),
+          statusCode: response.statusCode,
+          data: decoded,
         );
       }
 
