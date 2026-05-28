@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'viewmodels/splash_view_model.dart';
+
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key, this.initialization});
 
@@ -10,27 +12,17 @@ class SplashScreen extends StatefulWidget {
 }
 
 class _SplashScreenState extends State<SplashScreen> {
+  late final SplashViewModel _viewModel;
+
   @override
   void initState() {
     super.initState();
+    _viewModel = SplashViewModel(initialization: widget.initialization);
     _openWelcomeWhenReady();
   }
 
   Future<void> _openWelcomeWhenReady() async {
-    final minimumSplash = Future<void>.delayed(
-      const Duration(milliseconds: 850),
-    );
-
-    try {
-      await Future.wait([
-        minimumSplash,
-        widget.initialization ?? Future<void>.value(),
-      ]);
-    } catch (e) {
-      debugPrint('App initialization finished with warning: $e');
-      await minimumSplash;
-    }
-
+    await _viewModel.waitUntilReady();
     if (!mounted) return;
     Navigator.of(context).pushReplacementNamed('/welcome');
   }

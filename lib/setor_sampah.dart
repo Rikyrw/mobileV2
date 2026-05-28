@@ -1,12 +1,10 @@
 import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
-import 'services/app_cache_service.dart';
-import 'services/firebase_account_service.dart';
-import 'services/greenpoint_api_service.dart';
-import 'services/waste_photo_validation_service.dart';
+import 'viewmodels/setor_sampah_view_model.dart';
 
 class SetorSampahScreen extends StatefulWidget {
   const SetorSampahScreen({super.key});
@@ -16,833 +14,559 @@ class SetorSampahScreen extends StatefulWidget {
 }
 
 class _SetorSampahScreenState extends State<SetorSampahScreen> {
-  static const int _maxPhotosPerItem = 3;
-  final TextEditingController _namaController = TextEditingController();
-  final TextEditingController _alamatController = TextEditingController();
-  bool _showAjukanButton = false;
-  final List<WasteItem> _wasteItems = [];
-  final ImagePicker _picker = ImagePicker();
-  final WastePhotoValidationService _photoValidator =
-      WastePhotoValidationService();
-
-  static const _dummyData = SetorSampahDummyData(
-    userName: 'User',
-    saldo: 'Rp 0',
-    totalHarga: 'Rp 0',
-  );
-
-  String? _fetchedUserName;
-  String? _fetchedFullName;
-  String? _fetchedAddress;
-  double? _saldo;
-  bool _loadingProfile = false;
-  String? _currentEmail;
-  int? _nasabahId;
-  bool _submitting = false;
-  List<Map<String, dynamic>> _wasteTypes = [];
-  bool _loadingWasteTypes = false;
-  bool _validatingPhoto = false;
+  final SetorSampahViewModel _viewModel = SetorSampahViewModel();
+  bool _profileLoadRequested = false;
 
   @override
   void initState() {
     super.initState();
-    _loadWasteTypes();
-    //a
+    _viewModel.loadWasteTypes();
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_fetchedUserName == null && !_loadingProfile) {
-      _loadUserName();
-    }
-  }
-
-  Future<void> _loadUserName() async {
-    setState(() => _loadingProfile = true);
-
-    try {
-      // Try to get email from route arguments (if provided)
-      final args = ModalRoute.of(context)?.settings.arguments;
-      String? emailArg;
-      if (args is Map && args['email'] is String) {
-        emailArg = args['email'] as String;
-      }
-
-      // Prefer route argument, otherwise use auth currentUser
-      final firebaseUser = FirebaseAccountService.currentUser;
-      final email = emailArg ?? firebaseUser?.email;
-      _currentEmail = email;
-
-      if (email != null && email.isNotEmpty) {
-        final record = await AppCacheService.fetchNasabahByEmail(
-          email,
-          forceRefresh: true,
-        );
-
-        if (record != null) {
-          final nasabahId = record['id_nasabah'] as int?;
-          final fullName = record['nama_lengkap'] as String?;
-          final userName = record['user_name'] as String?;
-          final address = record['alamat'] as String?;
-          final saldo = (record['saldo'] as num?)?.toDouble();
-          setState(() {
-            _fetchedUserName = fullName ?? userName;
-            _fetchedFullName = fullName;
-            _fetchedAddress = address;
-            _saldo = saldo;
-            _nasabahId = nasabahId;
-          });
-          if (_namaController.text.trim().isEmpty) {
-            final nameToUse = fullName ?? userName;
-            if (nameToUse != null && nameToUse.isNotEmpty) {
-              _namaController.text = nameToUse;
-            }
-          }
-          if (_alamatController.text.trim().isEmpty) {
-            if (address != null && address.isNotEmpty) {
-              _alamatController.text = address;
-            }
-          }
-        }
-      }
-    } catch (e) {
-      debugPrint('Load user name error: $e');
-    } finally {
-      if (mounted) setState(() => _loadingProfile = false);
-    }
-  }
-
-  Future<void> _loadWasteTypes() async {
-    setState(() => _loadingWasteTypes = true);
-
-    try {
-      final res = await AppCacheService.fetchWasteTypes();
-      if (!mounted) return;
-      setState(() => _wasteTypes = res);
-    } catch (e) {
-      debugPrint('Error loading waste types: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Gagal memuat jenis sampah')),
-      );
-    } finally {
-      if (mounted) setState(() => _loadingWasteTypes = false);
+    if (!_profileLoadRequested) {
+      _profileLoadRequested = true;
+      _viewModel.loadUserProfile(emailArgument: _routeEmailArgument);
     }
   }
 
   @override
-  Widget build(BuildContext context) {
-    final senderName = _namaController.text.trim().isNotEmpty
-        ? _namaController.text.trim()
-        : (_fetchedFullName ?? _fetchedUserName ?? '');
-    final senderAddress = _alamatController.text.trim().isNotEmpty
-        ? _alamatController.text.trim()
-        : (_fetchedAddress ?? '');
-    final saldoText = _saldo == null
-        ? (_loadingProfile ? 'Memuat...' : _dummyData.saldo)
-        : _formatRupiah(_saldo!.round());
+  void dispose() {
+    _viewModel.dispose();
+    super.dispose();
+  }
 
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: SafeArea(
-        child: SingleChildScrollView(
-          child: Container(
-            width: double.infinity,
-            color: Colors.white,
-            child: Column(
-              children: [
-                Container(
-                  width: double.infinity,
+  String? get _routeEmailArgument {
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (args is Map && args['email'] is String) {
+      return args['email'] as String;
+    }
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _viewModel,
+      builder: (context, _) {
+        final errorMessage = _viewModel.errorMessage;
+        if (errorMessage != null) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            _showSnack(errorMessage);
+            _viewModel.clearError();
+          });
+        }
+
+        return Scaffold(
+          backgroundColor: Colors.white,
+          body: SafeArea(
+            child: SingleChildScrollView(
+              child: Container(
+                width: double.infinity,
+                color: Colors.white,
+                child: Padding(
                   padding: const EdgeInsets.all(16),
                   child: Column(
                     children: [
-                      SizedBox(
-                        width: double.infinity,
-                        child: Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            Align(
-                              alignment: Alignment.centerLeft,
-                              child: IconButton(
-                                onPressed: () {
-                                  Navigator.of(context).pushReplacementNamed(
-                                    '/profil',
-                                    arguments: {'email': _currentEmail},
-                                  );
-                                },
-                                icon: const Icon(Icons.arrow_back),
-                                iconSize: 24,
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(
-                                  minWidth: 48,
-                                  minHeight: 48,
-                                ),
-                                color: const Color(0xFF333333),
-                              ),
-                            ),
-                            const Text(
-                              'Setor Sampah',
-                              style: TextStyle(
-                                color: Color(0xFF333333),
-                                fontSize: 20,
-                                fontFamily: 'Roboto',
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            Align(
-                              alignment: Alignment.centerRight,
-                              child: Text(
-                                _fetchedUserName ?? _dummyData.userName,
-                                style: const TextStyle(
-                                  color: Color(0xFF315A39),
-                                  fontSize: 16,
-                                  fontFamily: 'Roboto',
-                                  fontWeight: FontWeight.w400,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                      _header(),
                       const SizedBox(height: 16),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          boxShadow: const [
-                            BoxShadow(
-                              color: Color(0x14000000),
-                              blurRadius: 12,
-                              offset: Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Saldo Anda',
-                              style: TextStyle(
-                                color: Color(0xFF666666),
-                                fontSize: 14,
-                                fontFamily: 'Roboto',
-                                fontWeight: FontWeight.w400,
-                              ),
-                            ),
-                            Text(
-                              saldoText,
-                              style: const TextStyle(
-                                color: Color(0xFF315A39),
-                                fontSize: 24,
-                                fontFamily: 'Roboto',
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                      _saldoCard(),
                       const SizedBox(height: 24),
-                      const Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          'Data Pengirim',
-                          style: TextStyle(
-                            color: Color(0xFF333333),
-                            fontSize: 16,
-                            fontFamily: 'Roboto',
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
+                      _sectionTitle('Data Pengirim'),
                       const SizedBox(height: 8),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF6F7F8),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Nama Lengkap',
-                              style: TextStyle(
-                                color: Color(0xFF999999),
-                                fontSize: 12,
-                                fontFamily: 'Roboto',
-                                fontWeight: FontWeight.w400,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              senderName.isNotEmpty ? senderName : '-',
-                              style: const TextStyle(
-                                color: Color(0xFF333333),
-                                fontSize: 14,
-                                fontFamily: 'Roboto',
-                                fontWeight: FontWeight.w400,
-                              ),
-                            ),
-                            const SizedBox(height: 12),
-                            const Text(
-                              'Alamat Lengkap',
-                              style: TextStyle(
-                                color: Color(0xFF999999),
-                                fontSize: 12,
-                                fontFamily: 'Roboto',
-                                fontWeight: FontWeight.w400,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              senderAddress.isNotEmpty ? senderAddress : '-',
-                              style: const TextStyle(
-                                color: Color(0xFF333333),
-                                fontSize: 14,
-                                fontFamily: 'Roboto',
-                                fontWeight: FontWeight.w400,
-                                height: 1.35,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                      _senderCard(),
                       const SizedBox(height: 24),
-                      const Align(
-                        alignment: Alignment.centerLeft,
-                        child: Text(
-                          'Jenis Sampah',
-                          style: TextStyle(
-                            color: Color(0xFF333333),
-                            fontSize: 16,
-                            fontFamily: 'Roboto',
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Container(
-                        width: double.infinity,
-                        height: 1,
-                        color: Colors.transparent,
-                      ),
-                      const SizedBox(height: 16),
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton(
-                          onPressed: () {
-                            _showAddWasteDialog();
-                          },
-                          style: OutlinedButton.styleFrom(
-                            minimumSize: const Size.fromHeight(48),
-                            side: const BorderSide(color: Color(0xFF315A39)),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(0),
-                            ),
-                            backgroundColor: Colors.transparent,
-                          ),
-                          child: const Text(
-                            '+ Tambah Jenis Sampah',
-                            style: TextStyle(
-                              color: Color(0xFF315A39),
-                              fontSize: 14,
-                              fontFamily: 'Roboto',
-                              fontWeight: FontWeight.w400,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      if (_wasteItems.isNotEmpty)
-                        Column(
-                          children: _wasteItems.map((item) {
-                            return Container(
-                              margin: const EdgeInsets.only(bottom: 8),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                  color: const Color(0xFFE0E0E0),
-                                ),
-                              ),
-                              child: CheckboxListTile(
-                                isThreeLine: true,
-                                value: item.selected,
-                                onChanged: (val) {
-                                  item.selected = val ?? false;
-                                  _updateShowAjukanButton();
-                                },
-                                title: Text(
-                                  item.name,
-                                  style: const TextStyle(
-                                    color: Color(0xFF333333),
-                                    fontSize: 14,
-                                    fontFamily: 'Roboto',
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                                subtitle: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      '${_formatRupiah(item.price.round())} / kg',
-                                      style: const TextStyle(
-                                        color: Color(0xFF666666),
-                                        fontSize: 14,
-                                        fontFamily: 'Roboto',
-                                        fontWeight: FontWeight.w400,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 6),
-                                    Row(
-                                      children: [
-                                        SizedBox(
-                                          width: 100,
-                                          height: 36,
-                                          child: TextField(
-                                            controller: item.weightController,
-                                            keyboardType:
-                                                const TextInputType.numberWithOptions(
-                                                  decimal: true,
-                                                ),
-                                            decoration: InputDecoration(
-                                              hintText: 'Berat (kg)',
-                                              contentPadding:
-                                                  const EdgeInsets.symmetric(
-                                                    horizontal: 8,
-                                                    vertical: 8,
-                                                  ),
-                                              border:
-                                                  const OutlineInputBorder(),
-                                              enabledBorder: OutlineInputBorder(
-                                                borderSide: BorderSide(
-                                                  color: (() {
-                                                    final raw = item
-                                                        .weightController
-                                                        .text
-                                                        .replaceAll(',', '.')
-                                                        .trim();
-                                                    final weight =
-                                                        double.tryParse(raw) ??
-                                                        0.0;
-                                                    return (raw.isNotEmpty &&
-                                                            weight < 1)
-                                                        ? Colors.red
-                                                        : const Color(
-                                                            0xFFE0E0E0,
-                                                          );
-                                                  })(),
-                                                ),
-                                              ),
-                                              focusedBorder: OutlineInputBorder(
-                                                borderSide: BorderSide(
-                                                  color: (() {
-                                                    final raw = item
-                                                        .weightController
-                                                        .text
-                                                        .replaceAll(',', '.')
-                                                        .trim();
-                                                    final weight =
-                                                        double.tryParse(raw) ??
-                                                        0.0;
-                                                    return (raw.isNotEmpty &&
-                                                            weight < 1)
-                                                        ? Colors.red
-                                                        : const Color(
-                                                            0xFF315A39,
-                                                          );
-                                                  })(),
-                                                  width: 2,
-                                                ),
-                                              ),
-                                              errorText: (() {
-                                                final raw = item
-                                                    .weightController
-                                                    .text
-                                                    .replaceAll(',', '.')
-                                                    .trim();
-                                                final weight = double.tryParse(
-                                                  raw,
-                                                );
-                                                if (raw.isNotEmpty &&
-                                                    (weight == null ||
-                                                        weight < 1)) {
-                                                  return 'Minimal 1 kg';
-                                                }
-                                                return null;
-                                              })(),
-                                            ),
-                                            onChanged: (_) {
-                                              _updateShowAjukanButton();
-                                            },
-                                          ),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        const Text('kg'),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 10),
-                                    Wrap(
-                                      spacing: 8,
-                                      runSpacing: 8,
-                                      children: [
-                                        ...item.images.map((img) {
-                                          return Stack(
-                                            alignment: Alignment.topRight,
-                                            children: [
-                                              ClipRRect(
-                                                borderRadius:
-                                                    BorderRadius.circular(8),
-                                                child: kIsWeb
-                                                    ? Image.network(
-                                                        img.path,
-                                                        width: 80,
-                                                        height: 80,
-                                                        fit: BoxFit.cover,
-                                                      )
-                                                    : Image.file(
-                                                        File(img.path),
-                                                        width: 80,
-                                                        height: 80,
-                                                        fit: BoxFit.cover,
-                                                      ),
-                                              ),
-                                              GestureDetector(
-                                                onTap: () {
-                                                  _confirmRemoveImage(
-                                                    item,
-                                                    img,
-                                                  );
-                                                },
-                                                child: Container(
-                                                  decoration: BoxDecoration(
-                                                    color: const Color(
-                                                      0xFF315A39,
-                                                    ),
-                                                    borderRadius:
-                                                        BorderRadius.circular(
-                                                          12,
-                                                        ),
-                                                  ),
-                                                  child: const Icon(
-                                                    Icons.close,
-                                                    size: 18,
-                                                    color: Colors.white,
-                                                  ),
-                                                ),
-                                              ),
-                                            ],
-                                          );
-                                        }),
-                                        if (item.selected &&
-                                            item.images.length <
-                                                _maxPhotosPerItem)
-                                          OutlinedButton.icon(
-                                            onPressed: _validatingPhoto
-                                                ? null
-                                                : () => _showImageSourceOptions(
-                                                    item,
-                                                  ),
-                                            icon: _validatingPhoto
-                                                ? const SizedBox(
-                                                    width: 18,
-                                                    height: 18,
-                                                    child:
-                                                        CircularProgressIndicator(
-                                                          strokeWidth: 2,
-                                                        ),
-                                                  )
-                                                : const Icon(
-                                                    Icons.camera_alt,
-                                                    size: 18,
-                                                    color: Color(0xFF315A39),
-                                                  ),
-                                            label: Text(
-                                              _validatingPhoto
-                                                  ? 'Memeriksa...'
-                                                  : 'Tambah Foto',
-                                              style: TextStyle(
-                                                color: _validatingPhoto
-                                                    ? const Color(0xFF7A867E)
-                                                    : const Color(0xFF315A39),
-                                              ),
-                                            ),
-                                            style: OutlinedButton.styleFrom(
-                                              side: const BorderSide(
-                                                color: Color(0xFF315A39),
-                                              ),
-                                            ),
-                                          ),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                                secondary: IconButton(
-                                  icon: const Icon(
-                                    Icons.delete_outline,
-                                    color: Color(0xFFBF360C),
-                                  ),
-                                  onPressed: () {
-                                    _confirmRemoveWaste(item);
-                                  },
-                                ),
-                              ),
-                            );
-                          }).toList(),
-                        ),
-                      const SizedBox(height: 12),
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(12),
-                          boxShadow: const [
-                            BoxShadow(
-                              color: Color(0x14000000),
-                              blurRadius: 12,
-                              offset: Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                        child: Row(
-                          children: [
-                            const Expanded(
-                              child: Text(
-                                'Total Harga',
-                                style: TextStyle(
-                                  color: Color(0xFF333333),
-                                  fontSize: 16,
-                                  fontFamily: 'Roboto',
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                            Text(
-                              _formatRupiah(_computeTotal()),
-                              style: const TextStyle(
-                                color: Color(0xFF315A39),
-                                fontSize: 18,
-                                fontFamily: 'Roboto',
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                      _sectionTitle('Jenis Sampah'),
                       const SizedBox(height: 24),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 48,
-                        child: ElevatedButton(
-                          onPressed: () {},
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF315A39),
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(0),
-                            ),
-                          ),
-                          child: const Text(
-                            'Hitung Total',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
-                              fontFamily: 'Roboto',
-                              fontWeight: FontWeight.w400,
-                            ),
-                          ),
-                        ),
-                      ),
+                      _addWasteButton(),
+                      const SizedBox(height: 16),
+                      if (_viewModel.wasteItems.isNotEmpty) _wasteList(),
                       const SizedBox(height: 12),
-                      if (_showAjukanButton)
-                        SizedBox(
-                          width: double.infinity,
-                          height: 48,
-                          child: ElevatedButton(
-                            onPressed: _submitting ? null : _submitSetorSampah,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF2E7D32),
-                              elevation: 0,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(0),
-                              ),
-                            ),
-                            child: _submitting
-                                ? const SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      valueColor: AlwaysStoppedAnimation<Color>(
-                                        Colors.white,
-                                      ),
-                                    ),
-                                  )
-                                : const Text(
-                                    'Ajukan Setor Sampah',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 16,
-                                      fontFamily: 'Roboto',
-                                      fontWeight: FontWeight.w400,
-                                    ),
-                                  ),
-                          ),
-                        ),
+                      _totalCard(),
+                      const SizedBox(height: 24),
+                      _calculateButton(),
+                      const SizedBox(height: 12),
+                      if (_viewModel.showAjukanButton) _submitButton(),
                     ],
                   ),
                 ),
-              ],
+              ),
             ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _header() {
+    return SizedBox(
+      width: double.infinity,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Align(
+            alignment: Alignment.centerLeft,
+            child: IconButton(
+              onPressed: () {
+                Navigator.of(context).pushReplacementNamed(
+                  '/profil',
+                  arguments: _viewModel.profileArguments,
+                );
+              },
+              icon: const Icon(Icons.arrow_back),
+              iconSize: 24,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+              color: const Color(0xFF333333),
+            ),
+          ),
+          const Text(
+            'Setor Sampah',
+            style: TextStyle(
+              color: Color(0xFF333333),
+              fontSize: 20,
+              fontFamily: 'Roboto',
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          Align(
+            alignment: Alignment.centerRight,
+            child: Text(
+              _viewModel.userName,
+              style: const TextStyle(
+                color: Color(0xFF315A39),
+                fontSize: 16,
+                fontFamily: 'Roboto',
+                fontWeight: FontWeight.w400,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _saldoCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x14000000),
+            blurRadius: 12,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Saldo Anda',
+            style: TextStyle(
+              color: Color(0xFF666666),
+              fontSize: 14,
+              fontFamily: 'Roboto',
+              fontWeight: FontWeight.w400,
+            ),
+          ),
+          Text(
+            _viewModel.saldoText,
+            style: const TextStyle(
+              color: Color(0xFF315A39),
+              fontSize: 24,
+              fontFamily: 'Roboto',
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionTitle(String title) {
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Text(
+        title,
+        style: const TextStyle(
+          color: Color(0xFF333333),
+          fontSize: 16,
+          fontFamily: 'Roboto',
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
+  Widget _senderCard() {
+    final senderName = _viewModel.senderName;
+    final senderAddress = _viewModel.senderAddress;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF6F7F8),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Nama Lengkap',
+            style: TextStyle(
+              color: Color(0xFF999999),
+              fontSize: 12,
+              fontFamily: 'Roboto',
+              fontWeight: FontWeight.w400,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            senderName.isNotEmpty ? senderName : '-',
+            style: const TextStyle(
+              color: Color(0xFF333333),
+              fontSize: 14,
+              fontFamily: 'Roboto',
+              fontWeight: FontWeight.w400,
+            ),
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'Alamat Lengkap',
+            style: TextStyle(
+              color: Color(0xFF999999),
+              fontSize: 12,
+              fontFamily: 'Roboto',
+              fontWeight: FontWeight.w400,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            senderAddress.isNotEmpty ? senderAddress : '-',
+            style: const TextStyle(
+              color: Color(0xFF333333),
+              fontSize: 14,
+              fontFamily: 'Roboto',
+              fontWeight: FontWeight.w400,
+              height: 1.35,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _addWasteButton() {
+    return SizedBox(
+      width: double.infinity,
+      child: OutlinedButton(
+        onPressed: _showAddWasteDialog,
+        style: OutlinedButton.styleFrom(
+          minimumSize: const Size.fromHeight(48),
+          side: const BorderSide(color: Color(0xFF315A39)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(0)),
+          backgroundColor: Colors.transparent,
+        ),
+        child: const Text(
+          '+ Tambah Jenis Sampah',
+          style: TextStyle(
+            color: Color(0xFF315A39),
+            fontSize: 14,
+            fontFamily: 'Roboto',
+            fontWeight: FontWeight.w400,
           ),
         ),
       ),
     );
   }
 
-  @override
-  void dispose() {
-    _namaController.dispose();
-    _alamatController.dispose();
-    for (var w in _wasteItems) {
-      w.weightController.dispose();
-    }
-    super.dispose();
+  Widget _wasteList() {
+    return Column(
+      children: _viewModel.wasteItems.map((item) {
+        return Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: const Color(0xFFE0E0E0)),
+          ),
+          child: CheckboxListTile(
+            isThreeLine: true,
+            value: item.selected,
+            onChanged: (value) {
+              _viewModel.toggleWasteItem(item, value ?? false);
+            },
+            title: Text(
+              item.name,
+              style: const TextStyle(
+                color: Color(0xFF333333),
+                fontSize: 14,
+                fontFamily: 'Roboto',
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            subtitle: _wasteItemDetails(item),
+            secondary: IconButton(
+              icon: const Icon(Icons.delete_outline, color: Color(0xFFBF360C)),
+              onPressed: () => _confirmRemoveWaste(item),
+            ),
+          ),
+        );
+      }).toList(),
+    );
   }
 
-  bool _hasValidSelection() {
-    for (var w in _wasteItems) {
-      if (w.selected) {
-        final raw = w.weightController.text.replaceAll(',', '.').trim();
-        final weight = double.tryParse(raw) ?? 0.0;
-        if (weight >= 1) return true;
-      }
-    }
-    return false;
+  Widget _wasteItemDetails(WasteItem item) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '${SetorSampahViewModel.formatRupiah(item.price.round())} / kg',
+          style: const TextStyle(
+            color: Color(0xFF666666),
+            fontSize: 14,
+            fontFamily: 'Roboto',
+            fontWeight: FontWeight.w400,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            SizedBox(
+              width: 100,
+              child: TextField(
+                controller: item.weightController,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: InputDecoration(
+                  hintText: 'Berat (kg)',
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 8,
+                  ),
+                  border: const OutlineInputBorder(),
+                  enabledBorder: OutlineInputBorder(
+                    borderSide: BorderSide(
+                      color: _isWeightInvalid(item)
+                          ? Colors.red
+                          : const Color(0xFFE0E0E0),
+                    ),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderSide: BorderSide(
+                      color: _isWeightInvalid(item)
+                          ? Colors.red
+                          : const Color(0xFF315A39),
+                      width: 2,
+                    ),
+                  ),
+                  errorText: _isWeightInvalid(item) ? 'Minimal 1 kg' : null,
+                ),
+                onChanged: (_) => _viewModel.refreshTotals(),
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Text('kg'),
+          ],
+        ),
+        const SizedBox(height: 10),
+        _photoSection(item),
+      ],
+    );
   }
 
-  void _updateShowAjukanButton() {
-    setState(() {
-      _showAjukanButton = _hasValidSelection();
-    });
+  Widget _photoSection(WasteItem item) {
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        ...item.images.map((image) {
+          return Stack(
+            alignment: Alignment.topRight,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: kIsWeb
+                    ? Image.network(
+                        image.path,
+                        width: 80,
+                        height: 80,
+                        fit: BoxFit.cover,
+                      )
+                    : Image.file(
+                        File(image.path),
+                        width: 80,
+                        height: 80,
+                        fit: BoxFit.cover,
+                      ),
+              ),
+              GestureDetector(
+                onTap: () => _confirmRemoveImage(item, image),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF315A39),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: const Icon(Icons.close, size: 18, color: Colors.white),
+                ),
+              ),
+            ],
+          );
+        }),
+        if (item.selected &&
+            item.images.length < SetorSampahViewModel.maxPhotosPerItem)
+          OutlinedButton.icon(
+            onPressed: _viewModel.validatingPhoto
+                ? null
+                : () => _showImageSourceOptions(item),
+            icon: _viewModel.validatingPhoto
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(
+                    Icons.camera_alt,
+                    size: 18,
+                    color: Color(0xFF315A39),
+                  ),
+            label: Text(
+              _viewModel.validatingPhoto ? 'Memeriksa...' : 'Tambah Foto',
+              style: TextStyle(
+                color: _viewModel.validatingPhoto
+                    ? const Color(0xFF7A867E)
+                    : const Color(0xFF315A39),
+              ),
+            ),
+            style: OutlinedButton.styleFrom(
+              side: const BorderSide(color: Color(0xFF315A39)),
+            ),
+          ),
+      ],
+    );
   }
 
-  int _computeTotal() {
-    double total = 0.0;
-    for (var w in _wasteItems) {
-      if (w.selected) {
-        final raw = w.weightController.text.replaceAll(',', '.');
-        final weight = double.tryParse(raw) ?? 0.0;
-        if (weight >= 1) {
-          total += w.price * weight;
-        }
-      }
-    }
-    return total.round();
+  Widget _totalCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x14000000),
+            blurRadius: 12,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          const Expanded(
+            child: Text(
+              'Total Harga',
+              style: TextStyle(
+                color: Color(0xFF333333),
+                fontSize: 16,
+                fontFamily: 'Roboto',
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          Text(
+            SetorSampahViewModel.formatRupiah(_viewModel.totalHarga),
+            style: const TextStyle(
+              color: Color(0xFF315A39),
+              fontSize: 18,
+              fontFamily: 'Roboto',
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _calculateButton() {
+    return SizedBox(
+      width: double.infinity,
+      height: 48,
+      child: ElevatedButton(
+        onPressed: _viewModel.refreshTotals,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFF315A39),
+          elevation: 0,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(0)),
+        ),
+        child: const Text(
+          'Hitung Total',
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: 16,
+            fontFamily: 'Roboto',
+            fontWeight: FontWeight.w400,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _submitButton() {
+    return SizedBox(
+      width: double.infinity,
+      height: 48,
+      child: ElevatedButton(
+        onPressed: _viewModel.submitting ? null : _submitSetorSampah,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: const Color(0xFF2E7D32),
+          elevation: 0,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(0)),
+        ),
+        child: _viewModel.submitting
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                ),
+              )
+            : const Text(
+                'Ajukan Setor Sampah',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontFamily: 'Roboto',
+                  fontWeight: FontWeight.w400,
+                ),
+              ),
+      ),
+    );
   }
 
   Future<void> _submitSetorSampah() async {
-    if (_submitting) return;
-    final nasabahId = _nasabahId;
-    if (nasabahId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Data nasabah belum tersedia.')),
-      );
-      return;
+    final result = await _viewModel.submitSetorSampah();
+    if (!mounted) return;
+
+    if (result.message.isNotEmpty) {
+      _showSnack(result.message);
     }
 
-    final selectedItems = _wasteItems.where((item) {
-      if (!item.selected) return false;
-      final raw = item.weightController.text.replaceAll(',', '.').trim();
-      final weight = double.tryParse(raw) ?? 0.0;
-      return weight >= 1;
-    }).toList();
-
-    if (selectedItems.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Pilih jenis sampah dan isi berat minimal 1 kg.'),
-        ),
-      );
-      return;
-    }
-
-    final missingPhotos = selectedItems
-        .where((item) => item.images.isEmpty)
-        .toList();
-    if (missingPhotos.isNotEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Foto wajib diisi untuk setiap jenis sampah yang dipilih.',
-          ),
-        ),
-      );
-      return;
-    }
-
-    final totalNilai = _computeTotal();
-    if (totalNilai <= 0) {
-      ScaffoldMessenger.of(
+    if (result.success) {
+      Navigator.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('Total harga belum valid.')));
-      return;
+      ).pushReplacementNamed('/profil', arguments: result.profileArguments);
     }
-
-    setState(() => _submitting = true);
-
-    try {
-      final setorItems = selectedItems.map((item) {
-        final raw = item.weightController.text.replaceAll(',', '.').trim();
-        final weight = double.tryParse(raw) ?? 0.0;
-        return GreenPointSetorItem(
-          idJenis: item.jenisId,
-          beratKg: weight,
-          photos: item.images,
-        );
-      }).toList();
-
-      await GreenPointApiService.submitSetorSampah(
-        nasabahId: nasabahId,
-        items: setorItems,
-      );
-      AppCacheService.invalidateActivity();
-
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Setor sampah berhasil diajukan.')),
-      );
-      final currentEmail = _currentEmail;
-      setState(() {
-        for (final item in _wasteItems) {
-          item.weightController.dispose();
-        }
-        _wasteItems.clear();
-        _showAjukanButton = false;
-      });
-      Navigator.of(context).pushReplacementNamed(
-        '/profil',
-        arguments: currentEmail == null ? null : {'email': currentEmail},
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Gagal mengajukan setor sampah: $e')),
-      );
-    } finally {
-      if (mounted) setState(() => _submitting = false);
-    }
-  }
-
-  String _formatRupiah(int value) {
-    if (value == 0) return 'Rp 0';
-    final s = value.toString();
-    final reg = RegExp(r"\B(?=(\d{3})+(?!\d))");
-    return 'Rp ${s.replaceAllMapped(reg, (m) => '.')}';
   }
 
   void _showAddWasteDialog() {
@@ -850,48 +574,61 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
       context: context,
       isScrollControlled: true,
       builder: (context) {
-        return SafeArea(
-          child: SizedBox(
-            height: MediaQuery.of(context).size.height * 0.6,
-            child: _loadingWasteTypes
-                ? const Center(child: CircularProgressIndicator())
-                : ListView(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    children: [
-                      const ListTile(title: Text('Pilih Jenis Sampah')),
-                      ..._wasteTypes.map((p) {
-                        return ListTile(
-                          title: Text(p['name']),
-                          subtitle: Text(
-                            _formatRupiah((p['price'] as double).round()),
-                          ),
-                          onTap: () {
-                            Navigator.of(context).pop();
-                            _showWeightDialogForPreset(
-                              p['id'],
-                              p['name'],
-                              p['price'],
+        return AnimatedBuilder(
+          animation: _viewModel,
+          builder: (context, _) {
+            return SafeArea(
+              child: SizedBox(
+                height: MediaQuery.of(context).size.height * 0.6,
+                child: _viewModel.loadingWasteTypes
+                    ? const Center(child: CircularProgressIndicator())
+                    : ListView(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        children: [
+                          const ListTile(title: Text('Pilih Jenis Sampah')),
+                          ..._viewModel.wasteTypes.map((item) {
+                            final price = _asDouble(item['price']);
+                            final name = item['name']?.toString() ?? '-';
+                            return ListTile(
+                              title: Text(name),
+                              subtitle: Text(
+                                SetorSampahViewModel.formatRupiah(
+                                  price.round(),
+                                ),
+                              ),
+                              onTap: () {
+                                Navigator.of(context).pop();
+                                _showWeightDialogForPreset(
+                                  _asInt(item['id']),
+                                  name,
+                                  price,
+                                );
+                              },
                             );
-                          },
-                        );
-                      }),
-                    ],
-                  ),
-          ),
+                          }),
+                        ],
+                      ),
+              ),
+            );
+          },
         );
       },
     );
   }
 
-  void _showWeightDialogForPreset(int jenisId, String name, double price) {
-    final TextEditingController weightCtrl = TextEditingController();
-    showDialog(
+  Future<void> _showWeightDialogForPreset(
+    int jenisId,
+    String name,
+    double price,
+  ) async {
+    final weightController = TextEditingController();
+    await showDialog<void>(
       context: context,
       builder: (context) {
         return AlertDialog(
           title: Text('Berat untuk $name'),
           content: TextField(
-            controller: weightCtrl,
+            controller: weightController,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             decoration: const InputDecoration(
               hintText: 'Masukkan berat (kg), contoh: 1.5',
@@ -899,47 +636,24 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
           ),
           actions: [
             TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
+              onPressed: () => Navigator.of(context).pop(),
               child: const Text('Batal'),
             ),
             ElevatedButton(
               onPressed: () {
-                final raw = weightCtrl.text.replaceAll(',', '.').trim();
-                final w = double.tryParse(raw) ?? 0.0;
-                if (w >= 1) {
-                  setState(() {
-                    final existing = _wasteItems
-                        .where((item) => item.jenisId == jenisId)
-                        .toList();
-                    if (existing.isNotEmpty) {
-                      final item = existing.first;
-                      final currentRaw = item.weightController.text
-                          .replaceAll(',', '.')
-                          .trim();
-                      final currentWeight = double.tryParse(currentRaw) ?? 0.0;
-                      final newWeight = currentWeight + w;
-                      item.weightController.text = newWeight.toString();
-                      item.selected = true;
-                    } else {
-                      final item = WasteItem(
-                        jenisId: jenisId,
-                        name: name,
-                        price: price,
-                        selected: true,
-                      );
-                      item.weightController.text = raw;
-                      _wasteItems.add(item);
-                    }
-                  });
-                  _updateShowAjukanButton();
-                  Navigator.of(context).pop();
-                } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Minimal 1 kg.')),
-                  );
+                final result = _viewModel.addOrUpdateWaste(
+                  jenisId: jenisId,
+                  name: name,
+                  price: price,
+                  rawWeight: weightController.text,
+                );
+
+                if (!result.success) {
+                  _showSnack(result.message);
+                  return;
                 }
+
+                Navigator.of(context).pop();
               },
               child: const Text('Tambah'),
             ),
@@ -947,10 +661,11 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
         );
       },
     );
+    weightController.dispose();
   }
 
   void _showImageSourceOptions(WasteItem item) {
-    if (_validatingPhoto) {
+    if (_viewModel.validatingPhoto) {
       _showSnack('Tunggu sampai pemeriksaan foto selesai.');
       return;
     }
@@ -986,102 +701,32 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
   }
 
   Future<void> _pickImage(WasteItem item, ImageSource source) async {
-    if (_validatingPhoto) {
+    if (_viewModel.validatingPhoto) {
       _showSnack('Tunggu sampai pemeriksaan foto selesai.');
       return;
     }
 
-    XFile? picked;
-
-    if (item.images.length >= _maxPhotosPerItem) {
-      _showSnack('Maksimal $_maxPhotosPerItem foto per jenis sampah.');
-      return;
-    }
-
-    try {
-      picked = await _picker.pickImage(
-        source: source,
-        imageQuality: 80,
-        maxWidth: 1024,
-      );
-    } catch (e) {
-      _showSnack('Gagal mengambil gambar: $e');
-      return;
-    }
-
-    if (picked == null) return;
-
-    await _validateAndAddImage(item, picked);
-  }
-
-  Future<void> _validateAndAddImage(WasteItem item, XFile picked) async {
-    final allowedWasteNames = _wasteTypes
-        .map((wasteType) => wasteType['name']?.toString().trim() ?? '')
-        .where((name) => name.isNotEmpty)
-        .toList();
-
+    _showSnack('Memeriksa foto sampah...');
+    final result = await _viewModel.pickAndValidateImage(item, source);
     if (!mounted) return;
-    setState(() => _validatingPhoto = true);
 
-    try {
-      _showSnack('Memeriksa foto sampah...');
+    if (result.hasWarning) {
+      _showInvalidPhotoWarning(result.warningMessage!);
+      return;
+    }
 
-      final validation = await _photoValidator.validateWastePhoto(
-        image: picked,
-        selectedWasteName: item.name,
-        allowedWasteNames: allowedWasteNames,
-      );
-
-      if (!mounted) return;
-
-      if (!validation.isAccepted) {
-        _showInvalidPhotoWarning(item.name, validation);
-        return;
-      }
-
-      if (!_wasteItems.contains(item)) {
-        return;
-      }
-
-      if (item.images.length >= _maxPhotosPerItem) {
-        _showSnack('Maksimal $_maxPhotosPerItem foto per jenis sampah.');
-        return;
-      }
-
-      setState(() => item.images.add(picked));
-      _showSnack('Foto ${item.name} berhasil terdeteksi.');
-    } on WastePhotoValidationException catch (e) {
-      if (!mounted) return;
-      _showInvalidPhotoWarning(
-        item.name,
-        WastePhotoValidationResult.rejected(e.message),
-      );
-    } catch (e) {
-      debugPrint('Waste photo validation error: $e');
-      if (!mounted) return;
-      _showInvalidPhotoWarning(
-        item.name,
-        WastePhotoValidationResult.rejected(
-          'Validasi foto gagal. Pastikan koneksi internet aktif lalu coba lagi.',
-        ),
-      );
-    } finally {
-      if (mounted) {
-        setState(() => _validatingPhoto = false);
-      }
+    if (result.hasMessage) {
+      _showSnack(result.message);
     }
   }
 
-  void _showInvalidPhotoWarning(
-    String expectedWasteName,
-    WastePhotoValidationResult validation,
-  ) {
+  void _showInvalidPhotoWarning(String warningMessage) {
     showDialog(
       context: context,
       builder: (context) {
         return AlertDialog(
           title: const Text('Foto tidak sesuai'),
-          content: Text(validation.warningMessage(expectedWasteName)),
+          content: Text(warningMessage),
           actions: [
             ElevatedButton(
               style: ElevatedButton.styleFrom(
@@ -1096,14 +741,7 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
     );
   }
 
-  void _showSnack(String message) {
-    if (!mounted) return;
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.hideCurrentSnackBar();
-    messenger.showSnackBar(SnackBar(content: Text(message)));
-  }
-
-  void _confirmRemoveImage(WasteItem item, XFile img) {
+  void _confirmRemoveImage(WasteItem item, XFile image) {
     showDialog(
       context: context,
       builder: (context) {
@@ -1120,7 +758,7 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
                 backgroundColor: const Color(0xFF315A39),
               ),
               onPressed: () {
-                setState(() => item.images.remove(img));
+                _viewModel.removeImage(item, image);
                 Navigator.of(context).pop();
               },
               child: const Text('Hapus'),
@@ -1148,11 +786,7 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
                 backgroundColor: const Color(0xFF315A39),
               ),
               onPressed: () {
-                setState(() {
-                  item.weightController.dispose();
-                  _wasteItems.remove(item);
-                });
-                _updateShowAjukanButton();
+                _viewModel.removeWasteItem(item);
                 Navigator.of(context).pop();
               },
               child: const Text('Hapus'),
@@ -1162,35 +796,30 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
       },
     );
   }
-}
 
-class SetorSampahDummyData {
-  const SetorSampahDummyData({
-    required this.userName,
-    required this.saldo,
-    required this.totalHarga,
-  });
+  void _showSnack(String message) {
+    if (!mounted || message.isEmpty) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(SnackBar(content: Text(message)));
+  }
 
-  final String userName;
-  final String saldo;
-  final String totalHarga;
-}
+  bool _isWeightInvalid(WasteItem item) {
+    final raw = item.weightController.text.replaceAll(',', '.').trim();
+    if (raw.isEmpty) return false;
+    final weight = double.tryParse(raw);
+    return weight == null || weight < 1;
+  }
 
-class WasteItem {
-  final int jenisId;
-  String name;
-  double price; // in rupiah
-  bool selected;
-  final TextEditingController weightController;
-  final List<XFile> images;
+  double _asDouble(Object? value) {
+    if (value is num) return value.toDouble();
+    if (value is String) return double.tryParse(value) ?? 0.0;
+    return 0.0;
+  }
 
-  WasteItem({
-    required this.jenisId,
-    required this.name,
-    required this.price,
-    this.selected = false,
-    TextEditingController? weightController,
-    List<XFile>? images,
-  }) : weightController = weightController ?? TextEditingController(),
-       images = images ?? [];
+  int _asInt(Object? value) {
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value) ?? 0;
+    return 0;
+  }
 }

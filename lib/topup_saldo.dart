@@ -1,16 +1,10 @@
-import 'dart:async';
-import 'dart:convert';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
-import 'services/app_cache_service.dart';
 import 'services/external_url_opener.dart';
-import 'services/firebase_account_service.dart';
-import 'services/greenpoint_api_service.dart';
+import 'viewmodels/topup_saldo_view_model.dart';
+import 'viewmodels/topup_web_view_model.dart';
 
 class TopupSaldoScreen extends StatefulWidget {
   const TopupSaldoScreen({super.key});
@@ -20,440 +14,85 @@ class TopupSaldoScreen extends StatefulWidget {
 }
 
 class _TopupSaldoScreenState extends State<TopupSaldoScreen> {
-  static const _minNominal = 10000;
-  static const _maxNominal = 10000000;
-  static const _createTopupPath = '/api/mobile/nasabah/topup';
-  static const _defaultCreateTopupUrl =
-      'http://localhost:8000/api/mobile/nasabah/topup';
-
+  final TopupSaldoViewModel _viewModel = TopupSaldoViewModel();
   final TextEditingController _nominalController = TextEditingController();
-
-  String? _currentEmail;
-  int? _nasabahId;
-  String? _fullName;
-  String? _phone;
-  double? _saldo;
-  List<TopupHistoryItem> _topupHistory = [];
-  DateTime? _topupHistoryDate;
-  bool _loadingProfile = false;
-  bool _loadingTopupHistory = false;
-  bool _submitting = false;
+  bool _profileLoadRequested = false;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (!_loadingProfile && _saldo == null) {
-      _loadUserProfile();
+    if (!_profileLoadRequested) {
+      _profileLoadRequested = true;
+      _viewModel.loadUserProfile(emailArgument: _routeEmailArgument);
     }
   }
 
   @override
   void dispose() {
+    _viewModel.dispose();
     _nominalController.dispose();
     super.dispose();
   }
 
-  Future<void> _loadUserProfile() async {
-    setState(() => _loadingProfile = true);
-
-    try {
-      final args = ModalRoute.of(context)?.settings.arguments;
-      String? emailArg;
-      if (args is Map && args['email'] is String) {
-        emailArg = args['email'] as String;
-      }
-
-      final firebaseUser = FirebaseAccountService.currentUser;
-      final email = emailArg ?? firebaseUser?.email;
-      _currentEmail = email;
-
-      if (email != null && email.isNotEmpty) {
-        final record = await AppCacheService.fetchNasabahByEmail(
-          email,
-          forceRefresh: true,
-        );
-
-        if (record != null) {
-          final saldoValue = (record['saldo'] as num?)?.toDouble();
-          setState(() {
-            _nasabahId = record['id_nasabah'] as int?;
-            _fullName = record['nama_lengkap'] as String?;
-            _phone = record['no_hp'] as String?;
-            _saldo = saldoValue;
-          });
-          final nasabahId = record['id_nasabah'] as int?;
-          if (nasabahId != null) {
-            _loadTopupHistory(nasabahId);
-          }
-        }
-      }
-    } catch (e) {
-      debugPrint('Load topup profile error: $e');
-    } finally {
-      if (mounted) setState(() => _loadingProfile = false);
+  String? get _routeEmailArgument {
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (args is Map && args['email'] is String) {
+      return args['email'] as String;
     }
-  }
-
-  Future<void> _loadTopupHistory(int nasabahId) async {
-    if (_loadingTopupHistory) return;
-    setState(() => _loadingTopupHistory = true);
-
-    try {
-      final rows = await _fetchTopupHistoryRows(nasabahId);
-      if (!mounted) return;
-      setState(() {
-        _topupHistory = rows.map(_mapTopupHistoryItem).toList();
-      });
-    } catch (e) {
-      debugPrint('Load topup history error: $e');
-      if (!mounted) return;
-      _showSnack('Gagal memuat riwayat top up.');
-    } finally {
-      if (mounted) setState(() => _loadingTopupHistory = false);
-    }
-  }
-
-  Future<List<Map<String, dynamic>>> _fetchTopupHistoryRows(
-    int nasabahId,
-  ) async {
-    return GreenPointApiService.fetchTopupHistory(
-      nasabahId: nasabahId,
-      date: _topupHistoryDate,
-      limit: 5,
-    );
-  }
-
-  TopupHistoryItem _mapTopupHistoryItem(Map<String, dynamic> row) {
-    final amount =
-        row['gross_amount'] ?? row['nominal'] ?? row['amount'] ?? row['total'];
-    final status =
-        row['transaction_status']?.toString() ??
-        row['status']?.toString() ??
-        '-';
-    final orderId =
-        row['order_id']?.toString() ??
-        row['id_topup_saldo']?.toString() ??
-        row['id_topup']?.toString() ??
-        '-';
-    final date =
-        row['created_at'] ??
-        row['updated_at'] ??
-        row['transaction_time'] ??
-        row['tanggal_topup'] ??
-        row['tanggal'];
-
-    return TopupHistoryItem(
-      orderId: _shortOrderId(orderId),
-      amount: _formatRupiah(_asNum(amount).round()),
-      status: status,
-      date: _formatDate(date?.toString()),
-    );
-  }
-
-  int? _parseNominal() {
-    final raw = _nominalController.text.trim();
-    final cleaned = raw.replaceAll(RegExp(r'[^0-9]'), '');
-    return int.tryParse(cleaned);
-  }
-
-  String _formatRupiah(num value) {
-    final digits = value.toStringAsFixed(0);
-    final buffer = StringBuffer();
-    for (var i = 0; i < digits.length; i++) {
-      final position = digits.length - i;
-      buffer.write(digits[i]);
-      if (position > 1 && position % 3 == 1) {
-        buffer.write('.');
-      }
-    }
-    return 'Rp ${buffer.toString()}';
-  }
-
-  num _asNum(dynamic value) {
-    if (value is num) return value;
-    if (value is String) {
-      return num.tryParse(value.replaceAll(RegExp(r'[^0-9.]'), '')) ?? 0;
-    }
-    return 0;
-  }
-
-  String _formatDate(String? raw) {
-    if (raw == null || raw.isEmpty) return '-';
-    try {
-      final parsed = DateTime.parse(raw).toLocal();
-      final day = parsed.day.toString().padLeft(2, '0');
-      final month = parsed.month.toString().padLeft(2, '0');
-      final year = parsed.year.toString();
-      final hour = parsed.hour.toString().padLeft(2, '0');
-      final minute = parsed.minute.toString().padLeft(2, '0');
-      return '$day-$month-$year $hour:$minute';
-    } catch (_) {
-      final dateOnly = raw.contains('T') ? raw.split('T').first : raw;
-      return dateOnly.contains(' ') ? dateOnly.split(' ').first : dateOnly;
-    }
-  }
-
-  String _formatDateOnly(DateTime date) {
-    final day = date.day.toString().padLeft(2, '0');
-    final month = date.month.toString().padLeft(2, '0');
-    final year = date.year.toString();
-    return '$day-$month-$year';
-  }
-
-  String _shortOrderId(String orderId) {
-    if (orderId == '-' || orderId.length <= 16) return orderId;
-    return '${orderId.substring(0, 8)}...${orderId.substring(orderId.length - 4)}';
+    return null;
   }
 
   Future<void> _pickTopupHistoryDate() async {
     final now = DateTime.now();
     final picked = await showDatePicker(
       context: context,
-      initialDate: _topupHistoryDate ?? now,
+      initialDate: _viewModel.topupHistoryDate ?? now,
       firstDate: DateTime(now.year - 3),
       lastDate: now,
     );
 
     if (picked == null) return;
-
-    setState(() => _topupHistoryDate = picked);
-    final nasabahId = _nasabahId;
-    if (nasabahId != null) {
-      await _loadTopupHistory(nasabahId);
-    }
+    await _viewModel.setTopupHistoryDate(picked);
   }
 
   Future<void> _clearTopupHistoryDate() async {
-    setState(() => _topupHistoryDate = null);
-    final nasabahId = _nasabahId;
-    if (nasabahId != null) {
-      await _loadTopupHistory(nasabahId);
-    }
+    await _viewModel.setTopupHistoryDate(null);
   }
 
   Future<void> _submitTopup() async {
-    if (_submitting) return;
+    final result = await _viewModel.submitTopup(
+      TopupSaldoViewModel.parseNominal(_nominalController.text),
+    );
+    if (!mounted) return;
 
-    final nominal = _parseNominal();
-    if (nominal == null) {
-      _showSnack('Nominal wajib diisi.');
+    if (!result.hasPayment) {
+      _showSnack(result.message ?? '');
       return;
     }
 
-    if (nominal < _minNominal || nominal > _maxNominal) {
-      _showSnack('Nominal harus antara Rp 10.000 - Rp 10.000.000.');
-      return;
-    }
+    final paymentResult = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (context) => kIsWeb
+            ? TopupExternalPaymentScreen(
+                redirectUrl: result.redirectUrl!,
+                orderId: result.orderId!,
+              )
+            : TopupWebViewScreen(
+                redirectUrl: result.redirectUrl!,
+                orderId: result.orderId!,
+              ),
+      ),
+    );
 
-    if (_nasabahId == null) {
-      _showSnack('Data nasabah belum tersedia. Coba buka ulang halaman ini.');
-      return;
-    }
-
-    setState(() => _submitting = true);
-
-    try {
-      final response = await _createTopupTransaction(nominal);
-
-      if (response.statusCode == 401) {
-        _showSnack('Silakan login terlebih dahulu.');
-        return;
-      }
-
-      if (response.statusCode == 404) {
-        _showSnack(
-          'Endpoint top up tidak ditemukan. Cek TOPUP_API_URL atau GREENPOINT_API_BASE_URL.',
-        );
-        return;
-      }
-
-      if (response.statusCode < 200 || response.statusCode >= 300) {
-        final message =
-            _extractMessage(response.body) ?? 'Gagal membuat transaksi top up.';
-        _showSnack(message);
-        return;
-      }
-
-      final data = jsonDecode(response.body) as Map<String, dynamic>;
-      final redirectUrl = data['redirect_url'] as String?;
-      final orderId = data['order_id'] as String?;
-
-      if (redirectUrl == null || redirectUrl.isEmpty || orderId == null) {
-        _showSnack('Data pembayaran tidak lengkap.');
-        return;
-      }
-
+    if (paymentResult == true) {
+      final message = await _viewModel.checkTopupStatus(result.orderId!);
       if (!mounted) return;
-      final result = await Navigator.of(context).push<bool>(
-        MaterialPageRoute(
-          builder: (context) => kIsWeb
-              ? TopupExternalPaymentScreen(
-                  redirectUrl: redirectUrl,
-                  orderId: orderId,
-                )
-              : TopupWebViewScreen(redirectUrl: redirectUrl, orderId: orderId),
-        ),
-      );
-
-      if (result == true) {
-        await _checkTopupStatus(orderId);
-      }
-    } catch (e) {
-      debugPrint('Topup submit error: $e');
-      _showSnack(_friendlyTopupError(e));
-    } finally {
-      if (mounted) setState(() => _submitting = false);
-    }
-  }
-
-  Future<http.Response> _createTopupTransaction(int nominal) async {
-    final body = jsonEncode({
-      'nominal': nominal,
-      'id_nasabah': _nasabahId,
-      if (_currentEmail != null && _currentEmail!.isNotEmpty)
-        'email': _currentEmail,
-      if (_fullName != null && _fullName!.isNotEmpty) 'nama_lengkap': _fullName,
-      if (_phone != null && _phone!.isNotEmpty) 'no_hp': _phone,
-    });
-    http.Response? lastResponse;
-    Object? lastError;
-
-    for (final apiUrl in _resolveTopupUrls()) {
-      try {
-        final response = await http
-            .post(
-              Uri.parse(apiUrl),
-              headers: const {
-                'Content-Type': 'application/json',
-                'Accept': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest',
-              },
-              body: body,
-            )
-            .timeout(const Duration(seconds: 30));
-
-        lastResponse = response;
-        if (!_shouldTryNextTopupEndpoint(response)) {
-          return response;
-        }
-
-        debugPrint('Topup endpoint skipped: $apiUrl');
-      } catch (e) {
-        lastError = e;
-        debugPrint('Topup request error for $apiUrl: $e');
-      }
-    }
-
-    if (lastResponse != null) return lastResponse;
-    throw lastError ?? Exception('Topup request failed.');
-  }
-
-  List<String> _resolveTopupUrls() {
-    final urls = <String>[];
-    final value = dotenv.env['TOPUP_API_URL']?.trim();
-    if (value != null && value.isNotEmpty) {
-      final originFallback = _urlFromOrigin(value, _createTopupPath);
-      if (originFallback != null) {
-        urls.add(originFallback);
-      }
-      urls.add(value);
-    }
-
-    final apiBaseUrl = dotenv.env['GREENPOINT_API_BASE_URL']?.trim();
-    if (apiBaseUrl != null && apiBaseUrl.isNotEmpty) {
-      urls.add(_joinUrl(apiBaseUrl, 'mobile/nasabah/topup'));
-    }
-
-    urls.add(_defaultCreateTopupUrl);
-    return urls.toSet().toList();
-  }
-
-  String? _urlFromOrigin(String rawUrl, String path) {
-    final uri = Uri.tryParse(rawUrl);
-    if (uri == null || !uri.hasScheme || uri.host.isEmpty) {
-      return null;
-    }
-
-    return uri.replace(path: path, query: '', fragment: '').toString();
-  }
-
-  String _joinUrl(String baseUrl, String path) {
-    final cleanBase = baseUrl.endsWith('/')
-        ? baseUrl.substring(0, baseUrl.length - 1)
-        : baseUrl;
-    final cleanPath = path.startsWith('/') ? path.substring(1) : path;
-    return '$cleanBase/$cleanPath';
-  }
-
-  bool _shouldTryNextTopupEndpoint(http.Response response) {
-    if (response.statusCode == 404 || response.statusCode == 419) {
-      return true;
-    }
-
-    return _isCsrfMismatch(response.body);
-  }
-
-  bool _isCsrfMismatch(String body) {
-    return body.toLowerCase().contains('csrf token mismatch');
-  }
-
-  String? _extractMessage(String body) {
-    try {
-      final data = jsonDecode(body);
-      if (data is Map<String, dynamic>) {
-        final message = data['message'];
-        if (message is String) return message;
-      }
-    } catch (_) {}
-    return null;
-  }
-
-  String _friendlyTopupError(Object error) {
-    if (error is FormatException) {
-      return 'URL top up tidak valid. Cek TOPUP_API_URL atau GREENPOINT_API_BASE_URL.';
-    }
-
-    if (error is http.ClientException) {
-      return 'Tidak bisa terhubung ke server. Periksa koneksi dan URL top up.';
-    }
-
-    return 'Gagal memproses top up.';
-  }
-
-  Future<void> _checkTopupStatus(String orderId) async {
-    try {
-      final res = await GreenPointApiService.checkTopupStatus(orderId);
-      final status = (res['status'] as String?) ?? 'pending';
-
-      if (status == 'not_found') {
-        _showSnack('Transaksi tidak ditemukan.');
-        return;
-      }
-
-      final transactionStatus =
-          (res['transaction_status'] as String?) ?? status;
-
-      if (transactionStatus == 'settlement' || transactionStatus == 'capture') {
-        AppCacheService.invalidateNasabahByEmail(_currentEmail);
-        await _loadUserProfile();
-        final nasabahId = _nasabahId;
-        if (nasabahId != null) {
-          await _loadTopupHistory(nasabahId);
-        }
-        _showSnack('Top up berhasil.');
-      } else if (transactionStatus == 'pending') {
-        _showSnack('Pembayaran masih pending.');
-      } else {
-        _showSnack('Status pembayaran: $transactionStatus');
-      }
-    } catch (e) {
-      debugPrint('Check topup status error: $e');
-      _showSnack('Gagal memeriksa status pembayaran.');
+      _showSnack(message);
     }
   }
 
   void _showSnack(String message) {
-    if (!mounted) return;
+    if (!mounted || message.isEmpty) return;
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(message)));
@@ -461,159 +100,173 @@ class _TopupSaldoScreenState extends State<TopupSaldoScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final saldoText = _saldo == null ? '-' : _formatRupiah(_saldo ?? 0);
+    return AnimatedBuilder(
+      animation: _viewModel,
+      builder: (context, _) {
+        final errorMessage = _viewModel.errorMessage;
+        if (errorMessage != null) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted) return;
+            _showSnack(errorMessage);
+            _viewModel.clearError();
+          });
+        }
 
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Container(
-              padding: const EdgeInsetsDirectional.fromSTEB(20, 40, 20, 24),
-              decoration: const BoxDecoration(color: Color(0xFF315A39)),
-              child: Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.arrow_back, color: Colors.white),
-                    onPressed: () {
-                      Navigator.of(context).pushReplacementNamed(
-                        '/profil',
-                        arguments: {'email': _currentEmail},
-                      );
-                    },
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(),
-                  ),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Text(
-                      'Top Up Saldo',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 18,
-                        fontFamily: 'Roboto',
-                        fontWeight: FontWeight.w700,
+        return Scaffold(
+          backgroundColor: Colors.white,
+          body: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Container(
+                  padding: const EdgeInsetsDirectional.fromSTEB(20, 40, 20, 24),
+                  decoration: const BoxDecoration(color: Color(0xFF315A39)),
+                  child: Row(
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.arrow_back, color: Colors.white),
+                        onPressed: () {
+                          Navigator.of(context).pushReplacementNamed(
+                            '/profil',
+                            arguments: _viewModel.profileArguments,
+                          );
+                        },
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
                       ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF4F8F4),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Saldo Saat Ini',
+                      const SizedBox(width: 12),
+                      const Expanded(
+                        child: Text(
+                          'Top Up Saldo',
                           style: TextStyle(
-                            color: Color(0xFF315A39),
-                            fontSize: 12,
-                            fontFamily: 'Roboto',
-                            fontWeight: FontWeight.w400,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          saldoText,
-                          style: const TextStyle(
-                            color: Color(0xFF315A39),
-                            fontSize: 20,
+                            color: Colors.white,
+                            fontSize: 18,
                             fontFamily: 'Roboto',
                             fontWeight: FontWeight.w700,
                           ),
                         ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  const Text(
-                    'Nominal Top Up',
-                    style: TextStyle(
-                      color: Color(0xFF333333),
-                      fontSize: 14,
-                      fontFamily: 'Roboto',
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: _nominalController,
-                    keyboardType: TextInputType.number,
-                    decoration: InputDecoration(
-                      hintText: 'Masukkan nominal (min 10.000)',
-                      filled: true,
-                      fillColor: const Color(0xFFF6F7F8),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(10),
-                        borderSide: BorderSide.none,
                       ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      _quickAmountChip(10000),
-                      _quickAmountChip(25000),
-                      _quickAmountChip(50000),
-                      _quickAmountChip(100000),
-                      _quickAmountChip(200000),
                     ],
                   ),
-                  const SizedBox(height: 24),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 48,
-                    child: ElevatedButton(
-                      onPressed: _submitting ? null : _submitTopup,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF315A39),
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF4F8F4),
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                      ),
-                      child: _submitting
-                          ? const SizedBox(
-                              width: 22,
-                              height: 22,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white,
-                              ),
-                            )
-                          : const Text(
-                              'Lanjutkan Pembayaran',
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Saldo Saat Ini',
                               style: TextStyle(
-                                fontSize: 14,
+                                color: Color(0xFF315A39),
+                                fontSize: 12,
+                                fontFamily: 'Roboto',
+                                fontWeight: FontWeight.w400,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              _viewModel.saldoText,
+                              style: const TextStyle(
+                                color: Color(0xFF315A39),
+                                fontSize: 20,
                                 fontFamily: 'Roboto',
                                 fontWeight: FontWeight.w700,
                               ),
                             ),
-                    ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      const Text(
+                        'Nominal Top Up',
+                        style: TextStyle(
+                          color: Color(0xFF333333),
+                          fontSize: 14,
+                          fontFamily: 'Roboto',
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: _nominalController,
+                        keyboardType: TextInputType.number,
+                        decoration: InputDecoration(
+                          hintText: 'Masukkan nominal (min 10.000)',
+                          filled: true,
+                          fillColor: const Color(0xFFF6F7F8),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _quickAmountChip(10000),
+                          _quickAmountChip(25000),
+                          _quickAmountChip(50000),
+                          _quickAmountChip(100000),
+                          _quickAmountChip(200000),
+                        ],
+                      ),
+                      const SizedBox(height: 24),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 48,
+                        child: ElevatedButton(
+                          onPressed: _viewModel.submitting
+                              ? null
+                              : _submitTopup,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF315A39),
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                          child: _viewModel.submitting
+                              ? const SizedBox(
+                                  width: 22,
+                                  height: 22,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : const Text(
+                                  'Lanjutkan Pembayaran',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontFamily: 'Roboto',
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      _topupHistorySection(),
+                    ],
                   ),
-                  const SizedBox(height: 24),
-                  _topupHistorySection(),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -629,7 +282,7 @@ class _TopupSaldoScreenState extends State<TopupSaldoScreen> {
           border: Border.all(color: const Color(0xFF315A39)),
         ),
         child: Text(
-          _formatRupiah(amount),
+          TopupSaldoViewModel.formatRupiah(amount),
           style: const TextStyle(
             color: Color(0xFF315A39),
             fontSize: 12,
@@ -668,10 +321,12 @@ class _TopupSaldoScreenState extends State<TopupSaldoScreen> {
                   ),
                 ),
                 IconButton(
-                  onPressed: _loadingTopupHistory || _nasabahId == null
+                  onPressed:
+                      _viewModel.loadingTopupHistory ||
+                          _viewModel.nasabahId == null
                       ? null
-                      : () => _loadTopupHistory(_nasabahId!),
-                  icon: _loadingTopupHistory
+                      : _viewModel.loadTopupHistory,
+                  icon: _viewModel.loadingTopupHistory
                       ? const SizedBox(
                           width: 18,
                           height: 18,
@@ -692,14 +347,16 @@ class _TopupSaldoScreenState extends State<TopupSaldoScreen> {
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 OutlinedButton.icon(
-                  onPressed: _loadingTopupHistory
+                  onPressed: _viewModel.loadingTopupHistory
                       ? null
                       : _pickTopupHistoryDate,
                   icon: const Icon(Icons.calendar_today, size: 16),
                   label: Text(
-                    _topupHistoryDate == null
+                    _viewModel.topupHistoryDate == null
                         ? 'Pilih Tanggal'
-                        : _formatDateOnly(_topupHistoryDate!),
+                        : TopupSaldoViewModel.formatDateOnly(
+                            _viewModel.topupHistoryDate!,
+                          ),
                   ),
                   style: OutlinedButton.styleFrom(
                     minimumSize: const Size(0, 36),
@@ -707,9 +364,9 @@ class _TopupSaldoScreenState extends State<TopupSaldoScreen> {
                     side: const BorderSide(color: Color(0xFF315A39)),
                   ),
                 ),
-                if (_topupHistoryDate != null)
+                if (_viewModel.topupHistoryDate != null)
                   TextButton.icon(
-                    onPressed: _loadingTopupHistory
+                    onPressed: _viewModel.loadingTopupHistory
                         ? null
                         : _clearTopupHistoryDate,
                     icon: const Icon(Icons.close, size: 16),
@@ -723,7 +380,7 @@ class _TopupSaldoScreenState extends State<TopupSaldoScreen> {
               ],
             ),
           ),
-          if (_loadingTopupHistory && _topupHistory.isEmpty)
+          if (_viewModel.loadingTopupHistory && _viewModel.topupHistory.isEmpty)
             const Padding(
               padding: EdgeInsets.fromLTRB(14, 4, 14, 16),
               child: Text(
@@ -735,7 +392,7 @@ class _TopupSaldoScreenState extends State<TopupSaldoScreen> {
                 ),
               ),
             )
-          else if (_topupHistory.isEmpty)
+          else if (_viewModel.topupHistory.isEmpty)
             const Padding(
               padding: EdgeInsets.fromLTRB(14, 4, 14, 16),
               child: Text(
@@ -771,7 +428,7 @@ class _TopupSaldoScreenState extends State<TopupSaldoScreen> {
                   DataColumn(label: Text('Status')),
                   DataColumn(label: Text('Order')),
                 ],
-                rows: _topupHistory.map((item) {
+                rows: _viewModel.topupHistory.map((item) {
                   return DataRow(
                     cells: [
                       DataCell(Text(item.date)),
@@ -807,7 +464,7 @@ class _TopupSaldoScreenState extends State<TopupSaldoScreen> {
         borderRadius: BorderRadius.circular(6),
       ),
       child: Text(
-        _statusLabel(status),
+        TopupSaldoViewModel.statusLabel(status),
         style: TextStyle(
           color: color,
           fontSize: 12,
@@ -817,42 +474,6 @@ class _TopupSaldoScreenState extends State<TopupSaldoScreen> {
       ),
     );
   }
-
-  String _statusLabel(String status) {
-    switch (status.toLowerCase()) {
-      case 'settlement':
-      case 'capture':
-      case 'success':
-      case 'paid':
-        return 'Berhasil';
-      case 'pending':
-        return 'Pending';
-      case 'expire':
-      case 'expired':
-        return 'Kedaluwarsa';
-      case 'cancel':
-      case 'deny':
-      case 'failure':
-      case 'failed':
-        return 'Gagal';
-      default:
-        return status.isEmpty ? '-' : status;
-    }
-  }
-}
-
-class TopupHistoryItem {
-  const TopupHistoryItem({
-    required this.date,
-    required this.amount,
-    required this.status,
-    required this.orderId,
-  });
-
-  final String date;
-  final String amount;
-  final String status;
-  final String orderId;
 }
 
 class TopupExternalPaymentScreen extends StatelessWidget {
@@ -988,7 +609,7 @@ class TopupWebViewScreen extends StatefulWidget {
 
 class _TopupWebViewScreenState extends State<TopupWebViewScreen> {
   late final WebViewController _controller;
-  bool _isLoading = true;
+  final TopupWebViewModel _viewModel = TopupWebViewModel();
 
   @override
   void initState() {
@@ -997,11 +618,17 @@ class _TopupWebViewScreenState extends State<TopupWebViewScreen> {
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setNavigationDelegate(
         NavigationDelegate(
-          onPageStarted: (_) => setState(() => _isLoading = true),
-          onPageFinished: (_) => setState(() => _isLoading = false),
+          onPageStarted: (_) => _viewModel.pageStarted(),
+          onPageFinished: (_) => _viewModel.pageFinished(),
         ),
       )
       ..loadRequest(Uri.parse(widget.redirectUrl));
+  }
+
+  @override
+  void dispose() {
+    _viewModel.dispose();
+    super.dispose();
   }
 
   @override
@@ -1036,14 +663,19 @@ class _TopupWebViewScreenState extends State<TopupWebViewScreen> {
           ),
         ],
       ),
-      body: Stack(
-        children: [
-          WebViewWidget(controller: _controller),
-          if (_isLoading)
-            const Center(
-              child: CircularProgressIndicator(color: Color(0xFF315A39)),
-            ),
-        ],
+      body: AnimatedBuilder(
+        animation: _viewModel,
+        builder: (context, _) {
+          return Stack(
+            children: [
+              WebViewWidget(controller: _controller),
+              if (_viewModel.loading)
+                const Center(
+                  child: CircularProgressIndicator(color: Color(0xFF315A39)),
+                ),
+            ],
+          );
+        },
       ),
     );
   }

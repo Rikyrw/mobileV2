@@ -1,10 +1,6 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:mob_2/email_verification_notice.dart';
-import 'services/app_cache_service.dart';
-import 'services/firebase_account_service.dart';
-import 'services/greenpoint_api_service.dart';
+import 'package:mob_2/viewmodels/dashboard_view_model.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -14,605 +10,373 @@ class DashboardScreen extends StatefulWidget {
 }
 
 class _DashboardScreenState extends State<DashboardScreen> {
-  static const String _greeting = 'Hallo,';
-  static const String _fallbackUserName = 'Nasabah';
-  static const String _welcomeMessage = 'Selamat datang di Green Point';
-  static const double _monthlyWeightTargetKg = 50;
-
-  String? _fetchedUserName;
-  double? _saldo;
-  bool _loadingProfile = false;
-  String? _currentEmail;
-  bool _loadingDashboard = false;
-  DashboardStats _stats = DashboardStats.empty;
-  List<DashboardSetorPreview> _recentSetor = [];
-  List<DashboardPpobPreview> _recentPpob = [];
-  DateTime _now = DateTime.now();
-  Timer? _clockTimer;
-
-  @override
-  void initState() {
-    super.initState();
-    _now = DateTime.now();
-    _clockTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!mounted) return;
-      setState(() => _now = DateTime.now());
-    });
-  }
+  final DashboardViewModel _viewModel = DashboardViewModel();
+  bool _profileLoadRequested = false;
 
   @override
   void dispose() {
-    _clockTimer?.cancel();
+    _viewModel.dispose();
     super.dispose();
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_fetchedUserName == null && !_loadingProfile) {
-      _loadUserName();
+    if (!_profileLoadRequested) {
+      _profileLoadRequested = true;
+      _loadUserProfile();
     }
   }
 
-  Future<void> _loadUserName() async {
-    setState(() => _loadingProfile = true);
-
-    try {
-      // Try to get email from route arguments (if provided)
-      final args = ModalRoute.of(context)?.settings.arguments;
-      String? emailArg;
-      if (args is Map && args['email'] is String) {
-        emailArg = args['email'] as String;
-      }
-
-      // Prefer route argument, otherwise use auth currentUser
-      final firebaseUser = FirebaseAccountService.currentUser;
-      final email = emailArg ?? firebaseUser?.email;
-      _currentEmail = email;
-
-      if (email != null && email.isNotEmpty) {
-        final record = await AppCacheService.fetchNasabahByEmail(
-          email,
-          forceRefresh: true,
-        );
-
-        if (record != null) {
-          if (_emailNeedsVerification(record)) {
-            await FirebaseAccountService.signOut();
-            if (!mounted) return;
-            Navigator.of(context).pushReplacement(
-              MaterialPageRoute(
-                builder: (context) => EmailVerificationNoticeScreen(
-                  email: (record['email'] as String?) ?? email,
-                ),
-              ),
-            );
-            return;
-          }
-
-          final nasabahId = record['id_nasabah'] as int?;
-          final saldo = (record['saldo'] as num?)?.toDouble();
-          setState(() {
-            _fetchedUserName =
-                (record['nama_lengkap'] as String?) ??
-                (record['user_name'] as String?);
-            _saldo = saldo;
-          });
-          if (nasabahId != null) {
-            _loadDashboardStats(nasabahId);
-          }
-          return;
-        }
-
-        final firebaseProfile =
-            await FirebaseAccountService.currentUserProfile();
-        if (firebaseProfile != null && firebaseProfile['email'] == email) {
-          setState(() {
-            _fetchedUserName =
-                (firebaseProfile['nama_lengkap'] as String?) ??
-                (firebaseProfile['user_name'] as String?);
-          });
-        }
-      }
-    } catch (e) {
-      debugPrint('Load user name error: $e');
-    } finally {
-      if (mounted) setState(() => _loadingProfile = false);
-    }
-  }
-
-  Future<void> _loadDashboardStats(int nasabahId) async {
-    if (_loadingDashboard) return;
-    setState(() => _loadingDashboard = true);
-
-    try {
-      final now = DateTime.now();
-      final currentStart = DateTime(now.year, now.month, 1);
-      final currentEnd = DateTime(now.year, now.month + 1, 0);
-      final dashboard = await GreenPointApiService.fetchDashboard(
-        nasabahId: nasabahId,
-        from: currentStart,
-        to: currentEnd,
-      );
-      final stats = _dashboardStatsFromMap(dashboard['stats']);
-      final recentSetor = _asMapList(
-        dashboard['recent_setor'],
-      ).map(_mapRecentSetorRow).toList();
-      final recentPpob = _asMapList(
-        dashboard['recent_ppob'],
-      ).map(_mapRecentPpobRow).toList();
-
-      if (!mounted) return;
-      setState(() {
-        _stats = stats;
-        _recentSetor = recentSetor;
-        _recentPpob = recentPpob;
-      });
-    } catch (e) {
-      debugPrint('Load dashboard stats error: $e');
-    } finally {
-      if (mounted) setState(() => _loadingDashboard = false);
-    }
-  }
-
-  DashboardStats _dashboardStatsFromMap(Object? value) {
-    if (value is! Map) {
-      return DashboardStats.empty;
-    }
-
-    final map = Map<String, dynamic>.from(value);
-    return DashboardStats(
-      setorCount: (map['setorCount'] as num?)?.round() ?? 0,
-      totalWeightKg: (map['totalWeightKg'] as num?)?.toDouble() ?? 0,
-      completedSetorValue: (map['completedSetorValue'] as num?)?.round() ?? 0,
-      ppobCount: (map['ppobCount'] as num?)?.round() ?? 0,
-      ppobAmount: (map['ppobAmount'] as num?)?.round() ?? 0,
-      withdrawalCount: (map['withdrawalCount'] as num?)?.round() ?? 0,
-      withdrawalAmount: (map['withdrawalAmount'] as num?)?.round() ?? 0,
-      waitingSetorCount: (map['waitingSetorCount'] as num?)?.round() ?? 0,
-      completedSetorCount: (map['completedSetorCount'] as num?)?.round() ?? 0,
-      rejectedSetorCount: (map['rejectedSetorCount'] as num?)?.round() ?? 0,
+  Future<void> _loadUserProfile() async {
+    final redirect = await _viewModel.loadUserProfile(
+      emailArgument: _routeEmailArgument,
     );
-  }
+    if (!mounted || redirect == null) return;
 
-  DashboardSetorPreview _mapRecentSetorRow(Map<String, dynamic> row) {
-    var weightKg = 0.0;
-    final details = row['detail_setor'];
-    if (details is List) {
-      for (final detail in details.whereType<Map>()) {
-        weightKg += (detail['berat_kg'] as num?)?.toDouble() ?? 0.0;
-      }
-    }
-
-    return DashboardSetorPreview(
-      title: 'Setor #${row['id_transaksi_setor'] ?? '-'}',
-      subtitle: '${_formatWeight(weightKg)} - ${_statusLabel(row['status'])}',
-      amount: _formatRupiah(((row['total_nilai'] as num?) ?? 0).round()),
-      date: _formatShortDate(row['tanggal_setor']?.toString()),
-    );
-  }
-
-  DashboardPpobPreview _mapRecentPpobRow(Map<String, dynamic> row) {
-    final product = (row['jenis_penukaran']?.toString() ?? '-').toUpperCase();
-
-    return DashboardPpobPreview(
-      title: product,
-      subtitle: _statusLabel(row['status']),
-      amount: _formatRupiah(((row['nominal'] as num?) ?? 0).round()),
-      date: _formatShortDate(row['tanggal_pengajuan']?.toString()),
-    );
-  }
-
-  List<Map<String, dynamic>> _asMapList(Object? rows) {
-    if (rows is! List) {
-      return const [];
-    }
-
-    return rows
-        .whereType<Map>()
-        .map((row) => Map<String, dynamic>.from(row))
-        .toList();
-  }
-
-  String _formatRupiah(int value) {
-    if (value == 0) return 'Rp 0';
-    final s = value.toString();
-    final reg = RegExp(r"\B(?=(\d{3})+(?!\d))");
-    return 'Rp ${s.replaceAllMapped(reg, (m) => '.')}';
-  }
-
-  String _formatWeight(double value) {
-    if (value <= 0) return '0 kg';
-    if (value == value.roundToDouble()) {
-      return '${value.round()} kg';
-    }
-    return '${value.toStringAsFixed(1)} kg';
-  }
-
-  String _formatShortDate(String? raw) {
-    if (raw == null || raw.trim().isEmpty) return '-';
-
-    try {
-      final normalized = raw.contains('T')
-          ? raw.split('T').first
-          : (raw.contains(' ') ? raw.split(' ').first : raw);
-      final date = DateTime.parse(normalized);
-      final day = date.day.toString().padLeft(2, '0');
-      final month = date.month.toString().padLeft(2, '0');
-      final year = date.year.toString();
-      return '$day-$month-$year';
-    } catch (_) {
-      return raw;
-    }
-  }
-
-  String _statusLabel(Object? status) {
-    final value = status?.toString().trim();
-    if (value == null || value.isEmpty) return '-';
-
-    final lower = value.toLowerCase();
-    if (lower == 'pending') return 'Menunggu';
-    if (lower == 'success' ||
-        lower == 'approved' ||
-        lower == 'berhasil' ||
-        lower == 'sukses') {
-      return 'Selesai';
-    }
-    if (lower == 'rejected' || lower == 'reject' || lower == 'failed') {
-      return 'Ditolak';
-    }
-
-    return value;
-  }
-
-  String _dashboardLevel(double monthWeightKg) {
-    if (monthWeightKg >= 30) {
-      return 'Pahlawan Daur Ulang';
-    }
-    if (monthWeightKg >= 10) {
-      return 'Aktif Setor';
-    }
-    if (monthWeightKg > 0) {
-      return 'Mulai Hijau';
-    }
-    return 'Level Hijau';
-  }
-
-  String _formatDayDateTime(DateTime date) {
-    const days = [
-      'Senin',
-      'Selasa',
-      'Rabu',
-      'Kamis',
-      'Jumat',
-      'Sabtu',
-      'Minggu',
-    ];
-    const months = [
-      'Januari',
-      'Februari',
-      'Maret',
-      'April',
-      'Mei',
-      'Juni',
-      'Juli',
-      'Agustus',
-      'September',
-      'Oktober',
-      'November',
-      'Desember',
-    ];
-
-    final dayName = days[date.weekday - 1];
-    final day = date.day.toString().padLeft(2, '0');
-    final month = months[date.month - 1];
-    final year = date.year.toString();
-    final hour = date.hour.toString().padLeft(2, '0');
-    final minute = date.minute.toString().padLeft(2, '0');
-    final second = date.second.toString().padLeft(2, '0');
-    return '$dayName, $day $month $year $hour:$minute:$second';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final stats = _stats;
-    final saldoText = _saldo == null
-        ? (_loadingProfile ? 'Memuat...' : 'Rp 0')
-        : _formatRupiah(_saldo!.round());
-    final level = _dashboardLevel(stats.totalWeightKg);
-    final progress = (stats.totalWeightKg / _monthlyWeightTargetKg)
-        .clamp(0.0, 1.0)
-        .toDouble();
-
-    return ColoredBox(
-      color: Colors.white,
-      child: SingleChildScrollView(
-        child: Container(
-          width: double.infinity,
-          color: Colors.white,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Container(
-                padding: const EdgeInsetsDirectional.fromSTEB(20, 40, 20, 30),
-                decoration: const BoxDecoration(color: Color(0xFF315A39)),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Opacity(
-                      opacity: 0.8,
-                      child: Text(
-                        _greeting,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontFamily: 'Roboto',
-                          fontWeight: FontWeight.w400,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      _fetchedUserName ?? _fallbackUserName,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 24,
-                        fontFamily: 'Roboto',
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Opacity(
-                      opacity: 0.8,
-                      child: Text(
-                        _formatDayDateTime(_now),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontFamily: 'Roboto',
-                          fontWeight: FontWeight.w400,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Dashboard',
-                      style: TextStyle(
-                        color: Color(0xFF333333),
-                        fontSize: 20,
-                        fontFamily: 'Roboto',
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      _welcomeMessage,
-                      style: TextStyle(
-                        color: Color(0xFF666666),
-                        fontSize: 14,
-                        fontFamily: 'Roboto',
-                        fontWeight: FontWeight.w400,
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    if (_loadingDashboard)
-                      const LinearProgressIndicator(
-                        minHeight: 3,
-                        color: Color(0xFF315A39),
-                        backgroundColor: Color(0xFFE8F5E9),
-                      ),
-                    if (_loadingDashboard) const SizedBox(height: 17),
-                    _DashboardHeroBalance(
-                      saldoText: saldoText,
-                      level: level,
-                      monthWeight: _formatWeight(stats.totalWeightKg),
-                      onTopup: _openTopupSaldo,
-                    ),
-                    const SizedBox(height: 14),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _DashboardQuickAction(
-                            label: 'E-Money',
-                            icon: Icons.account_balance_wallet_rounded,
-                            onTap: _openEmoney,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: _DashboardQuickAction(
-                            label: 'PLN',
-                            icon: Icons.bolt_rounded,
-                            onTap: _openPln,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: _DashboardQuickAction(
-                            label: 'Pulsa',
-                            icon: Icons.phone_android_rounded,
-                            onTap: _openPulsa,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 22),
-                    GridView.count(
-                      shrinkWrap: true,
-                      physics: const NeverScrollableScrollPhysics(),
-                      crossAxisCount: 2,
-                      crossAxisSpacing: 12,
-                      mainAxisSpacing: 12,
-                      childAspectRatio: 1,
-                      children: [
-                        _DashboardMetricCard(
-                          title: 'Setor Bulan Ini',
-                          value: stats.setorCount.toString(),
-                          caption: 'Transaksi',
-                          icon: Icons.recycling_outlined,
-                          onTap: _openRiwayat,
-                        ),
-                        _DashboardMetricCard(
-                          title: 'Berat Bulan Ini',
-                          value: _formatWeight(stats.totalWeightKg),
-                          caption: 'Total sampah',
-                          icon: Icons.scale_outlined,
-                          onTap: _openRiwayat,
-                        ),
-                        _DashboardMetricCard(
-                          title: 'Saldo Masuk',
-                          value: _formatRupiah(stats.completedSetorValue),
-                          caption: 'Dari setor selesai',
-                          icon: Icons.savings_outlined,
-                          onTap: _openRiwayat,
-                        ),
-                        _DashboardMetricCard(
-                          title: 'PPOB Bulan Ini',
-                          value: _formatRupiah(stats.ppobAmount),
-                          caption: '${stats.ppobCount} transaksi',
-                          icon: Icons.receipt_long_outlined,
-                          onTap: _openTransaksi,
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 24),
-                    _DashboardImpactCard(
-                      currentWeightText: _formatWeight(stats.totalWeightKg),
-                      targetWeightText: _formatWeight(_monthlyWeightTargetKg),
-                      progress: progress,
-                    ),
-                    const SizedBox(height: 24),
-                    const _DashboardSectionTitle(title: 'Ringkasan Bulan Ini'),
-                    const SizedBox(height: 12),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF6F8F6),
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: const Color(0xFFE4EAE4)),
-                      ),
-                      child: Column(
-                        children: [
-                          _DashboardSummaryRow(
-                            label: 'Setor bulan ini',
-                            value: '${stats.setorCount} transaksi',
-                          ),
-                          _DashboardSummaryRow(
-                            label: 'Total berat bulan ini',
-                            value: _formatWeight(stats.totalWeightKg),
-                          ),
-                          _DashboardSummaryRow(
-                            label: 'Saldo masuk dari setor',
-                            value: _formatRupiah(stats.completedSetorValue),
-                          ),
-                          _DashboardSummaryRow(
-                            label: 'PPOB bulan ini',
-                            value: _formatRupiah(stats.ppobAmount),
-                          ),
-                          if (stats.withdrawalCount > 0)
-                            _DashboardSummaryRow(
-                              label: 'Penarikan saldo',
-                              value:
-                                  '${_formatRupiah(stats.withdrawalAmount)} (${stats.withdrawalCount})',
-                              isLast: true,
-                            )
-                          else
-                            const _DashboardSummaryRow(
-                              label: 'Penarikan saldo',
-                              value: 'Belum ada',
-                              isLast: true,
-                            ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    const _DashboardSectionTitle(title: 'Status Setor'),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _DashboardStatusTile(
-                            label: 'Menunggu',
-                            value: stats.waitingSetorCount,
-                            color: const Color(0xFFB7791F),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: _DashboardStatusTile(
-                            label: 'Selesai',
-                            value: stats.completedSetorCount,
-                            color: const Color(0xFF2E7D32),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: _DashboardStatusTile(
-                            label: 'Ditolak',
-                            value: stats.rejectedSetorCount,
-                            color: const Color(0xFFB71C1C),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 24),
-                    _DashboardRecentSection(
-                      title: 'Transaksi Setor Terbaru',
-                      emptyText: 'Belum ada transaksi setor.',
-                      onTap: _openRiwayat,
-                      children: _recentSetor
-                          .map(
-                            (item) => _DashboardRecentTile(
-                              title: item.title,
-                              subtitle: item.subtitle,
-                              amount: item.amount,
-                              date: item.date,
-                              icon: Icons.recycling_rounded,
-                              onTap: _openRiwayat,
-                            ),
-                          )
-                          .toList(),
-                    ),
-                    const SizedBox(height: 20),
-                    _DashboardRecentSection(
-                      title: 'Transaksi PPOB Terbaru',
-                      emptyText: 'Belum ada transaksi PPOB.',
-                      onTap: _openTransaksi,
-                      children: _recentPpob
-                          .map(
-                            (item) => _DashboardRecentTile(
-                              title: item.title,
-                              subtitle: item.subtitle,
-                              amount: item.amount,
-                              date: item.date,
-                              icon: Icons.receipt_long_rounded,
-                              onTap: _openTransaksi,
-                            ),
-                          )
-                          .toList(),
-                    ),
-                    const SizedBox(height: 80),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (context) =>
+            EmailVerificationNoticeScreen(email: redirect.email),
       ),
     );
   }
 
+  String? get _routeEmailArgument {
+    final args = ModalRoute.of(context)?.settings.arguments;
+    if (args is Map && args['email'] is String) {
+      return args['email'] as String;
+    }
+    return null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _viewModel,
+      builder: (context, _) {
+        final viewModel = _viewModel;
+        final stats = viewModel.stats;
+        final saldoText = viewModel.saldoText;
+        final level = viewModel.level;
+        final progress = viewModel.monthlyWeightProgress;
+
+        return ColoredBox(
+          color: Colors.white,
+          child: SingleChildScrollView(
+            child: Container(
+              width: double.infinity,
+              color: Colors.white,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Container(
+                    padding: const EdgeInsetsDirectional.fromSTEB(
+                      20,
+                      40,
+                      20,
+                      30,
+                    ),
+                    decoration: const BoxDecoration(color: Color(0xFF315A39)),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Opacity(
+                          opacity: 0.8,
+                          child: Text(
+                            DashboardViewModel.greeting,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontFamily: 'Roboto',
+                              fontWeight: FontWeight.w400,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          viewModel.userName,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 24,
+                            fontFamily: 'Roboto',
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Opacity(
+                          opacity: 0.8,
+                          child: Text(
+                            viewModel.currentDateText,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontFamily: 'Roboto',
+                              fontWeight: FontWeight.w400,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Dashboard',
+                          style: TextStyle(
+                            color: Color(0xFF333333),
+                            fontSize: 20,
+                            fontFamily: 'Roboto',
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        const Text(
+                          DashboardViewModel.welcomeMessage,
+                          style: TextStyle(
+                            color: Color(0xFF666666),
+                            fontSize: 14,
+                            fontFamily: 'Roboto',
+                            fontWeight: FontWeight.w400,
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        if (viewModel.loadingDashboard)
+                          const LinearProgressIndicator(
+                            minHeight: 3,
+                            color: Color(0xFF315A39),
+                            backgroundColor: Color(0xFFE8F5E9),
+                          ),
+                        if (viewModel.loadingDashboard)
+                          const SizedBox(height: 17),
+                        _DashboardHeroBalance(
+                          saldoText: saldoText,
+                          level: level,
+                          monthWeight: DashboardViewModel.formatWeight(
+                            stats.totalWeightKg,
+                          ),
+                          onTopup: _openTopupSaldo,
+                        ),
+                        const SizedBox(height: 14),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _DashboardQuickAction(
+                                label: 'E-Money',
+                                icon: Icons.account_balance_wallet_rounded,
+                                onTap: _openEmoney,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: _DashboardQuickAction(
+                                label: 'PLN',
+                                icon: Icons.bolt_rounded,
+                                onTap: _openPln,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: _DashboardQuickAction(
+                                label: 'Pulsa',
+                                icon: Icons.phone_android_rounded,
+                                onTap: _openPulsa,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 22),
+                        GridView.count(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          crossAxisCount: 2,
+                          crossAxisSpacing: 12,
+                          mainAxisSpacing: 12,
+                          childAspectRatio: 1,
+                          children: [
+                            _DashboardMetricCard(
+                              title: 'Setor Bulan Ini',
+                              value: stats.setorCount.toString(),
+                              caption: 'Transaksi',
+                              icon: Icons.recycling_outlined,
+                              onTap: _openRiwayat,
+                            ),
+                            _DashboardMetricCard(
+                              title: 'Berat Bulan Ini',
+                              value: DashboardViewModel.formatWeight(
+                                stats.totalWeightKg,
+                              ),
+                              caption: 'Total sampah',
+                              icon: Icons.scale_outlined,
+                              onTap: _openRiwayat,
+                            ),
+                            _DashboardMetricCard(
+                              title: 'Saldo Masuk',
+                              value: DashboardViewModel.formatRupiah(
+                                stats.completedSetorValue,
+                              ),
+                              caption: 'Dari setor selesai',
+                              icon: Icons.savings_outlined,
+                              onTap: _openRiwayat,
+                            ),
+                            _DashboardMetricCard(
+                              title: 'PPOB Bulan Ini',
+                              value: DashboardViewModel.formatRupiah(
+                                stats.ppobAmount,
+                              ),
+                              caption: '${stats.ppobCount} transaksi',
+                              icon: Icons.receipt_long_outlined,
+                              onTap: _openTransaksi,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 24),
+                        _DashboardImpactCard(
+                          currentWeightText: DashboardViewModel.formatWeight(
+                            stats.totalWeightKg,
+                          ),
+                          targetWeightText: DashboardViewModel.formatWeight(
+                            DashboardViewModel.monthlyWeightTargetKg,
+                          ),
+                          progress: progress,
+                        ),
+                        const SizedBox(height: 24),
+                        const _DashboardSectionTitle(
+                          title: 'Ringkasan Bulan Ini',
+                        ),
+                        const SizedBox(height: 12),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(14),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF6F8F6),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: const Color(0xFFE4EAE4)),
+                          ),
+                          child: Column(
+                            children: [
+                              _DashboardSummaryRow(
+                                label: 'Setor bulan ini',
+                                value: '${stats.setorCount} transaksi',
+                              ),
+                              _DashboardSummaryRow(
+                                label: 'Total berat bulan ini',
+                                value: DashboardViewModel.formatWeight(
+                                  stats.totalWeightKg,
+                                ),
+                              ),
+                              _DashboardSummaryRow(
+                                label: 'Saldo masuk dari setor',
+                                value: DashboardViewModel.formatRupiah(
+                                  stats.completedSetorValue,
+                                ),
+                              ),
+                              _DashboardSummaryRow(
+                                label: 'PPOB bulan ini',
+                                value: DashboardViewModel.formatRupiah(
+                                  stats.ppobAmount,
+                                ),
+                              ),
+                              if (stats.withdrawalCount > 0)
+                                _DashboardSummaryRow(
+                                  label: 'Penarikan saldo',
+                                  value:
+                                      '${DashboardViewModel.formatRupiah(stats.withdrawalAmount)} (${stats.withdrawalCount})',
+                                  isLast: true,
+                                )
+                              else
+                                const _DashboardSummaryRow(
+                                  label: 'Penarikan saldo',
+                                  value: 'Belum ada',
+                                  isLast: true,
+                                ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        const _DashboardSectionTitle(title: 'Status Setor'),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _DashboardStatusTile(
+                                label: 'Menunggu',
+                                value: stats.waitingSetorCount,
+                                color: const Color(0xFFB7791F),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: _DashboardStatusTile(
+                                label: 'Selesai',
+                                value: stats.completedSetorCount,
+                                color: const Color(0xFF2E7D32),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: _DashboardStatusTile(
+                                label: 'Ditolak',
+                                value: stats.rejectedSetorCount,
+                                color: const Color(0xFFB71C1C),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 24),
+                        _DashboardRecentSection(
+                          title: 'Transaksi Setor Terbaru',
+                          emptyText: 'Belum ada transaksi setor.',
+                          onTap: _openRiwayat,
+                          children: viewModel.recentSetor
+                              .map(
+                                (item) => _DashboardRecentTile(
+                                  title: item.title,
+                                  subtitle: item.subtitle,
+                                  amount: item.amount,
+                                  date: item.date,
+                                  icon: Icons.recycling_rounded,
+                                  onTap: _openRiwayat,
+                                ),
+                              )
+                              .toList(),
+                        ),
+                        const SizedBox(height: 20),
+                        _DashboardRecentSection(
+                          title: 'Transaksi PPOB Terbaru',
+                          emptyText: 'Belum ada transaksi PPOB.',
+                          onTap: _openTransaksi,
+                          children: viewModel.recentPpob
+                              .map(
+                                (item) => _DashboardRecentTile(
+                                  title: item.title,
+                                  subtitle: item.subtitle,
+                                  amount: item.amount,
+                                  date: item.date,
+                                  icon: Icons.receipt_long_rounded,
+                                  onTap: _openTransaksi,
+                                ),
+                              )
+                              .toList(),
+                        ),
+                        const SizedBox(height: 80),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Object? get _routeArguments {
-    final email = _currentEmail;
-    return email == null ? null : {'email': email};
+    return _viewModel.routeArguments;
   }
 
   void _openRiwayat() {
@@ -650,81 +414,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
       context,
     ).pushReplacementNamed('/pulsa', arguments: _routeArguments);
   }
-
-  static bool _emailNeedsVerification(Map<String, dynamic> record) {
-    final emailVerifiedAt = record['email_verified_at']?.toString().trim();
-    final googleId = record['google_id']?.toString().trim();
-
-    return (emailVerifiedAt == null || emailVerifiedAt.isEmpty) &&
-        (googleId == null || googleId.isEmpty);
-  }
-}
-
-class DashboardStats {
-  const DashboardStats({
-    required this.setorCount,
-    required this.totalWeightKg,
-    required this.completedSetorValue,
-    required this.ppobCount,
-    required this.ppobAmount,
-    required this.withdrawalCount,
-    required this.withdrawalAmount,
-    required this.waitingSetorCount,
-    required this.completedSetorCount,
-    required this.rejectedSetorCount,
-  });
-
-  static const empty = DashboardStats(
-    setorCount: 0,
-    totalWeightKg: 0,
-    completedSetorValue: 0,
-    ppobCount: 0,
-    ppobAmount: 0,
-    withdrawalCount: 0,
-    withdrawalAmount: 0,
-    waitingSetorCount: 0,
-    completedSetorCount: 0,
-    rejectedSetorCount: 0,
-  );
-
-  final int setorCount;
-  final double totalWeightKg;
-  final int completedSetorValue;
-  final int ppobCount;
-  final int ppobAmount;
-  final int withdrawalCount;
-  final int withdrawalAmount;
-  final int waitingSetorCount;
-  final int completedSetorCount;
-  final int rejectedSetorCount;
-}
-
-class DashboardSetorPreview {
-  const DashboardSetorPreview({
-    required this.title,
-    required this.subtitle,
-    required this.amount,
-    required this.date,
-  });
-
-  final String title;
-  final String subtitle;
-  final String amount;
-  final String date;
-}
-
-class DashboardPpobPreview {
-  const DashboardPpobPreview({
-    required this.title,
-    required this.subtitle,
-    required this.amount,
-    required this.date,
-  });
-
-  final String title;
-  final String subtitle;
-  final String amount;
-  final String date;
 }
 
 class _DashboardSectionTitle extends StatelessWidget {

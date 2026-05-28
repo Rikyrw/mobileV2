@@ -1,8 +1,6 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
-import 'package:mob_2/services/chatbot_knowledge_base.dart';
-import 'package:mob_2/services/groq_service.dart';
+
+import 'viewmodels/chatbot_view_model.dart';
 
 class ChatbotScreen extends StatefulWidget {
   const ChatbotScreen({super.key, this.onBack});
@@ -14,38 +12,10 @@ class ChatbotScreen extends StatefulWidget {
 }
 
 class _ChatbotScreenState extends State<ChatbotScreen>
-    with TickerProviderStateMixin {
-  final TextEditingController _messageController = TextEditingController();
+    with SingleTickerProviderStateMixin {
+  final ChatbotViewModel _viewModel = ChatbotViewModel();
   final ScrollController _scrollController = ScrollController();
-
-  final List<ChatMessage> _messages = [
-    ChatMessage(
-      text: 'Halo! Saya Si Jajang. Ada yang bisa saya bantu hari ini?',
-      isBotMessage: true,
-      timestamp: DateTime.now(),
-    ),
-  ];
-
-  final Map<String, String> _answerCache = {};
-  final ChatbotKnowledgeBase _knowledgeBase = const ChatbotKnowledgeBase();
-
-  bool _isLoading = false;
-  bool _isCooldown = false;
-  bool _isAiLimited = false;
-
-  // Untuk Groq free/demo, indikator ini dibuat lokal agar user paham penggunaan AI.
-  // Angkanya bukan data real-time resmi dari server Groq.
-  static const int _localDailyRequestLimit = 1000;
-  static const Duration _sendCooldown = Duration(seconds: 5);
-  static const Duration _fallbackLimitDuration = Duration(seconds: 60);
-
-  int _aiRequestsToday = 0;
-  DateTime _usageDate = DateTime.now();
-  DateTime? _retryAfterAt;
-  Timer? _limitCountdownTimer;
-
-  late GroqService _groqService;
-  late AnimationController _dotController;
+  late final AnimationController _dotController;
 
   static const Color _primary = Color(0xFF2D5A3D);
   static const Color _primarySoft = Color(0xFFEAF3ED);
@@ -58,374 +28,33 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   @override
   void initState() {
     super.initState();
-
+    _viewModel.addListener(_scrollToBottom);
     _dotController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1200),
     )..repeat();
-
-    _initializeGroq();
+    _scrollToBottom();
   }
 
   @override
   void dispose() {
-    _limitCountdownTimer?.cancel();
+    _viewModel.removeListener(_scrollToBottom);
     _dotController.dispose();
     _scrollController.dispose();
-    _messageController.dispose();
+    _viewModel.dispose();
     super.dispose();
-  }
-
-  void _initializeGroq() {
-    try {
-      _groqService = GroqService();
-    } catch (e) {
-      debugPrint('Groq initialization error: $e');
-
-      if (mounted) {
-        setState(() {
-          _messages.add(
-            ChatMessage(
-              text:
-                  'Maaf, terjadi kesalahan saat inisialisasi AI. Pastikan API key Groq sudah diatur.',
-              isBotMessage: true,
-              timestamp: DateTime.now(),
-            ),
-          );
-        });
-      }
-    }
   }
 
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 260),
-          curve: Curves.easeOut,
-        );
-      }
-    });
-  }
+      if (!mounted || !_scrollController.hasClients) return;
 
-  String _normalizeText(String value) {
-    return ChatbotKnowledgeBase.normalizeText(value);
-  }
-
-  String? _getLocalFaqAnswer(String question) {
-    return _knowledgeBase.answerFor(question);
-  }
-
-  List<GroqChatTurn> _buildRecentConversationHistory() {
-    if (_messages.length <= 1) {
-      return const [];
-    }
-
-    final previousMessages = _messages.sublist(0, _messages.length - 1);
-    final startIndex = previousMessages.length > 6
-        ? previousMessages.length - 6
-        : 0;
-
-    return previousMessages.sublist(startIndex).map((message) {
-      return GroqChatTurn(
-        role: message.isBotMessage ? 'assistant' : 'user',
-        content: message.text,
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOut,
       );
-    }).toList();
-  }
-
-  String _buildCacheKey(
-    String normalizedMessage,
-    List<GroqChatTurn> conversationHistory,
-  ) {
-    final contextKey = conversationHistory
-        .map((turn) => '${turn.role}:${_normalizeText(turn.content)}')
-        .join('|');
-
-    return '$contextKey::$normalizedMessage';
-  }
-
-  void _resetDailyUsageIfNeeded() {
-    final now = DateTime.now();
-    final isDifferentDay =
-        now.year != _usageDate.year ||
-        now.month != _usageDate.month ||
-        now.day != _usageDate.day;
-
-    if (isDifferentDay) {
-      _usageDate = now;
-      _aiRequestsToday = 0;
-      _isAiLimited = false;
-      _retryAfterAt = null;
-    }
-  }
-
-  int _getLimitWaitSeconds() {
-    if (_retryAfterAt == null) return 0;
-
-    final seconds = _retryAfterAt!.difference(DateTime.now()).inSeconds;
-    return seconds > 0 ? seconds : 0;
-  }
-
-  bool _shouldBlockAiRequest() {
-    _resetDailyUsageIfNeeded();
-
-    if (_isAiLimited) {
-      final waitSeconds = _getLimitWaitSeconds();
-
-      if (waitSeconds > 0) return true;
-
-      _isAiLimited = false;
-      _retryAfterAt = null;
-    }
-
-    return _aiRequestsToday >= _localDailyRequestLimit;
-  }
-
-  void _markAiRequestUsed() {
-    _resetDailyUsageIfNeeded();
-
-    setState(() {
-      _aiRequestsToday++;
-
-      if (_aiRequestsToday >= _localDailyRequestLimit) {
-        _isAiLimited = true;
-      }
     });
-  }
-
-  void _startSendCooldown() {
-    setState(() {
-      _isCooldown = true;
-    });
-
-    Future.delayed(_sendCooldown, () {
-      if (mounted) {
-        setState(() {
-          _isCooldown = false;
-        });
-      }
-    });
-  }
-
-  void _activateAiLimitFromError(Object error) {
-    int retrySeconds = _fallbackLimitDuration.inSeconds;
-
-    if (error is GroqApiException && error.retryAfterSeconds != null) {
-      retrySeconds = error.retryAfterSeconds!;
-    } else {
-      final errorText = error.toString();
-
-      final retryMatches = [
-        RegExp(r'try again in ([0-9.]+)s', caseSensitive: false),
-        RegExp(r'retry in ([0-9.]+)s', caseSensitive: false),
-        RegExp(r'Please try again in ([0-9.]+)s', caseSensitive: false),
-      ];
-
-      for (final regex in retryMatches) {
-        final match = regex.firstMatch(errorText);
-        if (match != null) {
-          final value = double.tryParse(match.group(1) ?? '');
-          if (value != null) {
-            retrySeconds = value.ceil();
-            break;
-          }
-        }
-      }
-    }
-
-    setState(() {
-      _isAiLimited = true;
-      _retryAfterAt = DateTime.now().add(Duration(seconds: retrySeconds));
-    });
-
-    _limitCountdownTimer?.cancel();
-    _limitCountdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
-
-      final waitSeconds = _getLimitWaitSeconds();
-
-      if (waitSeconds <= 0) {
-        timer.cancel();
-
-        setState(() {
-          _isAiLimited = false;
-          _retryAfterAt = null;
-        });
-      } else {
-        setState(() {});
-      }
-    });
-  }
-
-  String _getLimitMessage() {
-    final waitSeconds = _getLimitWaitSeconds();
-
-    if (waitSeconds > 0) {
-      return 'Maaf, AI Si Jajang sedang mencapai batas penggunaan sementara. Coba lagi sekitar $waitSeconds detik lagi ya.';
-    }
-
-    return 'Maaf, penggunaan AI hari ini sedang penuh. Coba lagi nanti atau gunakan pertanyaan umum yang bisa dijawab otomatis.';
-  }
-
-  Future<void> _sendMessage() async {
-    final message = _messageController.text.trim();
-
-    if (message.isEmpty || _isLoading || _isCooldown) return;
-
-    if (message.length > 300) {
-      setState(() {
-        _messages.add(
-          ChatMessage(
-            text:
-                'Pertanyaan terlalu panjang. Coba ringkas maksimal 300 karakter ya.',
-            isBotMessage: true,
-            timestamp: DateTime.now(),
-          ),
-        );
-      });
-      _scrollToBottom();
-      return;
-    }
-
-    setState(() {
-      _messages.add(
-        ChatMessage(
-          text: message,
-          isBotMessage: false,
-          timestamp: DateTime.now(),
-        ),
-      );
-      _messageController.clear();
-      _isLoading = true;
-    });
-
-    _startSendCooldown();
-    _scrollToBottom();
-
-    final localAnswer = _getLocalFaqAnswer(message);
-
-    if (localAnswer != null) {
-      await Future.delayed(const Duration(milliseconds: 450));
-
-      if (mounted) {
-        setState(() {
-          _messages.add(
-            ChatMessage(
-              text: localAnswer,
-              isBotMessage: true,
-              timestamp: DateTime.now(),
-            ),
-          );
-          _isLoading = false;
-        });
-        _scrollToBottom();
-      }
-
-      return;
-    }
-
-    final normalizedMessage = _normalizeText(message);
-    final recentConversationHistory = _buildRecentConversationHistory();
-    final cacheKey = _buildCacheKey(
-      normalizedMessage,
-      recentConversationHistory,
-    );
-
-    if (_answerCache.containsKey(cacheKey)) {
-      await Future.delayed(const Duration(milliseconds: 350));
-
-      if (mounted) {
-        setState(() {
-          _messages.add(
-            ChatMessage(
-              text: _answerCache[cacheKey]!,
-              isBotMessage: true,
-              timestamp: DateTime.now(),
-            ),
-          );
-          _isLoading = false;
-        });
-        _scrollToBottom();
-      }
-
-      return;
-    }
-
-    if (_shouldBlockAiRequest()) {
-      await Future.delayed(const Duration(milliseconds: 350));
-
-      if (mounted) {
-        setState(() {
-          _messages.add(
-            ChatMessage(
-              text: _getLimitMessage(),
-              isBotMessage: true,
-              timestamp: DateTime.now(),
-            ),
-          );
-          _isLoading = false;
-        });
-        _scrollToBottom();
-      }
-
-      return;
-    }
-
-    try {
-      _markAiRequestUsed();
-
-      final botResponse = await _groqService.sendMessage(
-        message,
-        conversationHistory: recentConversationHistory,
-      );
-
-      _answerCache[cacheKey] = botResponse;
-
-      if (mounted) {
-        setState(() {
-          _messages.add(
-            ChatMessage(
-              text: botResponse,
-              isBotMessage: true,
-              timestamp: DateTime.now(),
-            ),
-          );
-          _isLoading = false;
-        });
-        _scrollToBottom();
-      }
-    } catch (e) {
-      debugPrint('Error sending message with Groq: $e');
-
-      final isRateLimitError = e is GroqApiException
-          ? e.isRateLimit
-          : e.toString().contains('429');
-
-      if (isRateLimitError) {
-        _activateAiLimitFromError(e);
-      }
-
-      if (mounted) {
-        setState(() {
-          _messages.add(
-            ChatMessage(
-              text: isRateLimitError
-                  ? _getLimitMessage()
-                  : 'Maaf, Si Jajang sedang sibuk atau koneksi bermasalah. Coba lagi sebentar ya.',
-              isBotMessage: true,
-              timestamp: DateTime.now(),
-            ),
-          );
-          _isLoading = false;
-        });
-        _scrollToBottom();
-      }
-    }
   }
 
   String _formatTime(DateTime dt) {
@@ -436,22 +65,27 @@ class _ChatbotScreenState extends State<ChatbotScreen>
 
   @override
   Widget build(BuildContext context) {
-    return ColoredBox(
-      color: _background,
-      child: Column(
-        children: [
-          _buildAppBar(),
-          Expanded(
-            child: Column(
-              children: [
-                Expanded(child: _buildMessageList()),
-                if (_isLoading) _buildTypingIndicator(),
-                _buildInputBar(),
-              ],
-            ),
+    return AnimatedBuilder(
+      animation: _viewModel,
+      builder: (context, _) {
+        return ColoredBox(
+          color: _background,
+          child: Column(
+            children: [
+              _buildAppBar(),
+              Expanded(
+                child: Column(
+                  children: [
+                    Expanded(child: _buildMessageList()),
+                    if (_viewModel.isLoading) _buildTypingIndicator(),
+                    _buildInputBar(),
+                  ],
+                ),
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -517,19 +151,22 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   }
 
   Widget _buildMessageList() {
+    final messages = _viewModel.messages;
+
     return ListView.builder(
       controller: _scrollController,
       padding: const EdgeInsets.fromLTRB(16, 18, 16, 10),
-      itemCount: _messages.length,
+      itemCount: messages.length,
       itemBuilder: (context, index) {
-        final msg = _messages[index];
+        final message = messages[index];
         final isFirst =
-            index == 0 || _messages[index - 1].isBotMessage != msg.isBotMessage;
+            index == 0 ||
+            messages[index - 1].isBotMessage != message.isBotMessage;
 
         return _MessageBubble(
-          message: msg,
+          message: message,
           isFirst: isFirst,
-          timeString: _formatTime(msg.timestamp),
+          timeString: _formatTime(message.timestamp),
         );
       },
     );
@@ -570,6 +207,8 @@ class _ChatbotScreenState extends State<ChatbotScreen>
   }
 
   Widget _buildInputBar() {
+    final inputDisabled = _viewModel.isLoading || _viewModel.isCooldown;
+
     return Container(
       padding: EdgeInsets.fromLTRB(
         16,
@@ -593,12 +232,12 @@ class _ChatbotScreenState extends State<ChatbotScreen>
                 border: Border.all(color: _border),
               ),
               child: TextField(
-                controller: _messageController,
-                enabled: !_isLoading && !_isCooldown,
+                controller: _viewModel.messageController,
+                enabled: !inputDisabled,
                 maxLines: 5,
                 minLines: 1,
                 textInputAction: TextInputAction.send,
-                onSubmitted: (_) => _sendMessage(),
+                onSubmitted: (_) => _viewModel.sendMessage(),
                 style: const TextStyle(
                   fontSize: 14,
                   color: _text,
@@ -622,14 +261,14 @@ class _ChatbotScreenState extends State<ChatbotScreen>
           ),
           const SizedBox(width: 10),
           GestureDetector(
-            onTap: (_isLoading || _isCooldown) ? null : _sendMessage,
+            onTap: inputDisabled ? null : _viewModel.sendMessage,
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 180),
               width: 48,
               height: 48,
               decoration: BoxDecoration(
-                color: (_isLoading || _isCooldown)
-                    ? _primary.withOpacity(0.45)
+                color: inputDisabled
+                    ? _primary.withValues(alpha: 0.45)
                     : _primary,
                 borderRadius: BorderRadius.circular(18),
               ),
@@ -809,11 +448,11 @@ class _TypingDots extends StatelessWidget {
       height: 10,
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: List.generate(3, (i) {
+        children: List.generate(3, (index) {
           return AnimatedBuilder(
             animation: controller,
-            builder: (_, __) {
-              final delay = i * 0.33;
+            builder: (_, _) {
+              final delay = index * 0.33;
               final t = ((controller.value - delay) % 1.0).clamp(0.0, 1.0);
               final opacity = (t < 0.5 ? t * 2 : (1 - t) * 2).clamp(0.35, 1.0);
 
@@ -834,16 +473,4 @@ class _TypingDots extends StatelessWidget {
       ),
     );
   }
-}
-
-class ChatMessage {
-  final String text;
-  final bool isBotMessage;
-  final DateTime timestamp;
-
-  ChatMessage({
-    required this.text,
-    required this.isBotMessage,
-    required this.timestamp,
-  });
 }

@@ -5,6 +5,7 @@ import 'dashboard.dart';
 import 'profil.dart';
 import 'riwayat.dart';
 import 'transaksi.dart';
+import 'viewmodels/main_tab_view_model.dart';
 
 class MainTabScaffold extends StatefulWidget {
   const MainTabScaffold({super.key, this.initialIndex = homeIndex});
@@ -22,36 +23,38 @@ class MainTabScaffold extends StatefulWidget {
 }
 
 class _MainTabScaffoldState extends State<MainTabScaffold> {
-  late int _selectedIndex;
+  late final MainTabViewModel _viewModel;
   late final List<Widget?> _pages;
 
   @override
   void initState() {
     super.initState();
-    _selectedIndex = _normalizeIndex(widget.initialIndex);
+    _viewModel = MainTabViewModel(
+      maxIndex: MainTabScaffold.profilIndex,
+      initialIndex: widget.initialIndex,
+    );
     _pages = List<Widget?>.filled(MainTabScaffold.profilIndex + 1, null);
-    _ensurePage(_selectedIndex);
+    _ensurePage(_viewModel.selectedIndex);
   }
 
   @override
   void didUpdateWidget(covariant MainTabScaffold oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.initialIndex != widget.initialIndex) {
-      _selectedIndex = _normalizeIndex(widget.initialIndex);
-      _ensurePage(_selectedIndex);
+      _viewModel.updateInitialIndex(widget.initialIndex);
+      _ensurePage(_viewModel.selectedIndex);
     }
   }
 
-  void _selectTab(int index) {
-    final nextIndex = _normalizeIndex(index);
-    if (_selectedIndex == nextIndex) {
-      return;
-    }
+  @override
+  void dispose() {
+    _viewModel.dispose();
+    super.dispose();
+  }
 
-    setState(() {
-      _ensurePage(nextIndex);
-      _selectedIndex = nextIndex;
-    });
+  void _selectTab(int index) {
+    _viewModel.selectTab(index);
+    _ensurePage(_viewModel.selectedIndex);
   }
 
   void _ensurePage(int index) {
@@ -76,52 +79,43 @@ class _MainTabScaffoldState extends State<MainTabScaffold> {
     }
   }
 
-  int _normalizeIndex(int index) {
-    if (index < MainTabScaffold.homeIndex) {
-      return MainTabScaffold.homeIndex;
-    }
-    if (index > MainTabScaffold.profilIndex) {
-      return MainTabScaffold.profilIndex;
-    }
-    return index;
-  }
-
   List<BottomNavigationItemConfig> _buildNavItems() {
+    final selectedIndex = _viewModel.selectedIndex;
     return [
       BottomNavigationItemConfig(
         iconAsset: 'assets/home11.png',
         label: 'Home',
-        isActive: _selectedIndex == MainTabScaffold.homeIndex,
+        isActive: selectedIndex == MainTabScaffold.homeIndex,
         fallbackIcon: Icons.home,
         onTap: () => _selectTab(MainTabScaffold.homeIndex),
       ),
       BottomNavigationItemConfig(
         iconAsset: 'assets/riwayat1.png',
         label: 'Transaksi',
-        isActive: _selectedIndex == MainTabScaffold.transaksiIndex,
+        isActive: selectedIndex == MainTabScaffold.transaksiIndex,
         fallbackIcon: Icons.swap_horiz,
         onTap: () => _selectTab(MainTabScaffold.transaksiIndex),
       ),
       BottomNavigationItemConfig(
         iconAsset: 'assets/chat_ai.png',
         label: 'Chat AI',
-        isActive: _selectedIndex == MainTabScaffold.chatIndex,
+        isActive: selectedIndex == MainTabScaffold.chatIndex,
         fallbackIcon: Icons.smart_toy,
         onTap: () => _selectTab(MainTabScaffold.chatIndex),
       ),
       BottomNavigationItemConfig(
         iconAsset: 'assets/history.png',
         label: 'Riwayat',
-        isActive: _selectedIndex == MainTabScaffold.riwayatIndex,
+        isActive: selectedIndex == MainTabScaffold.riwayatIndex,
         fallbackIcon: Icons.history,
         onTap: () => _selectTab(MainTabScaffold.riwayatIndex),
       ),
       BottomNavigationItemConfig(
-        iconAsset: _selectedIndex == MainTabScaffold.profilIndex
+        iconAsset: selectedIndex == MainTabScaffold.profilIndex
             ? 'assets/person2.png'
             : 'assets/person.png',
         label: 'Profil',
-        isActive: _selectedIndex == MainTabScaffold.profilIndex,
+        isActive: selectedIndex == MainTabScaffold.profilIndex,
         fallbackIcon: Icons.person,
         onTap: () => _selectTab(MainTabScaffold.profilIndex),
       ),
@@ -130,16 +124,23 @@ class _MainTabScaffoldState extends State<MainTabScaffold> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white,
-      body: IndexedStack(
-        index: _selectedIndex,
-        children: List.generate(
-          _pages.length,
-          (index) => _pages[index] ?? const SizedBox.shrink(),
-        ),
-      ),
-      bottomNavigationBar: DashboardBottomNavigation(items: _buildNavItems()),
+    return AnimatedBuilder(
+      animation: _viewModel,
+      builder: (context, _) {
+        return Scaffold(
+          backgroundColor: Colors.white,
+          body: IndexedStack(
+            index: _viewModel.selectedIndex,
+            children: List.generate(
+              _pages.length,
+              (index) => _pages[index] ?? const SizedBox.shrink(),
+            ),
+          ),
+          bottomNavigationBar: DashboardBottomNavigation(
+            items: _buildNavItems(),
+          ),
+        );
+      },
     );
   }
 }
