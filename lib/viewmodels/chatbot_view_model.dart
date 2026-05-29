@@ -114,7 +114,7 @@ class ChatbotViewModel extends ChangeNotifier {
     final groqService = _groqService;
     if (groqService == null) {
       _addBotMessage(
-        'Maaf, terjadi kesalahan saat inisialisasi AI. Pastikan API key Groq sudah diatur.',
+        'Maaf, terjadi kesalahan saat inisialisasi AI. Pastikan server GreenPoint aktif.',
       );
       _setLoading(false);
       return;
@@ -161,7 +161,7 @@ class ChatbotViewModel extends ChangeNotifier {
       _messages.add(
         ChatMessage(
           text:
-              'Maaf, terjadi kesalahan saat inisialisasi AI. Pastikan API key Groq sudah diatur.',
+              'Maaf, terjadi kesalahan saat inisialisasi AI. Pastikan server GreenPoint aktif.',
           isBotMessage: true,
           timestamp: DateTime.now(),
         ),

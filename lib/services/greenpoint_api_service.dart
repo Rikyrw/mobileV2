@@ -1,9 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
+
+import '../config/app_config.dart';
 
 class GreenPointApiException implements Exception {
   GreenPointApiException(this.message, {this.statusCode, this.data});
@@ -41,15 +42,18 @@ class GreenPointApiService {
   static String? _accessToken;
 
   static String get _baseUrl {
-    final configured = dotenv.env['GREENPOINT_API_BASE_URL']?.trim();
-    final base = (configured == null || configured.isEmpty)
-        ? 'http://10.0.2.2:8000/api'
-        : configured;
+    final configured = AppConfig.clean(AppConfig.greenPointApiBaseUrl);
+    final base = configured.isEmpty ? 'http://10.0.2.2:8000/api' : configured;
 
     return base.endsWith('/') ? base.substring(0, base.length - 1) : base;
   }
 
   static String? get accessToken => _accessToken;
+
+  static void restoreAuthToken(String? token) {
+    final cleanToken = token?.trim();
+    _accessToken = cleanToken == null || cleanToken.isEmpty ? null : cleanToken;
+  }
 
   static Map<String, String> get jsonHeaders {
     return {
@@ -191,7 +195,7 @@ class GreenPointApiService {
     await _post('/mobile/nasabah/email-verification/resend', {'email': email});
   }
 
-  static Future<void> sendPasswordReset(
+  static Future<String> sendPasswordReset(
     String identifier, {
     String? email,
   }) async {
@@ -206,7 +210,11 @@ class GreenPointApiService {
       body['username'] = normalizedIdentifier;
     }
 
-    await _post('/mobile/nasabah/password-reset', body);
+    final response = await _post('/mobile/nasabah/password-reset', body);
+    final message = response['message']?.toString().trim();
+    return message != null && message.isNotEmpty
+        ? message
+        : 'Link reset password sudah dikirim. Cek inbox atau folder spam email Anda.';
   }
 
   static Future<Map<String, dynamic>> verifyManualLogin({
@@ -319,6 +327,41 @@ class GreenPointApiService {
 
   static Future<Map<String, dynamic>> checkTopupStatus(String orderId) {
     return _get('/mobile/nasabah/topup/status', {'order_id': orderId});
+  }
+
+  static Future<String> sendChatbotMessage({
+    required String message,
+    required List<Map<String, String>> history,
+  }) async {
+    final response = await _post('/mobile/nasabah/chatbot/message', {
+      'message': message,
+      'history': history,
+    });
+
+    final reply = response['message']?.toString().trim();
+    if (reply == null || reply.isEmpty) {
+      throw GreenPointApiException('Jawaban chatbot kosong.');
+    }
+
+    return reply;
+  }
+
+  static Future<Map<String, dynamic>> validateWastePhoto({
+    required int jenisId,
+    required String photoDataUrl,
+  }) async {
+    try {
+      return await _post('/mobile/nasabah/validate-waste-photo', {
+        'id_jenis': jenisId,
+        'photo': photoDataUrl,
+      });
+    } on GreenPointApiException catch (error) {
+      if (error.statusCode == 422 && error.data != null) {
+        return error.data!;
+      }
+
+      rethrow;
+    }
   }
 
   static Future<void> submitPpob({

@@ -49,6 +49,7 @@ class TransaksiViewModel extends ChangeNotifier {
 
   String? _fetchedUserName;
   bool _loadingProfile = false;
+  String? _currentEmail;
   int? _nasabahId;
   bool _loadingTransaksi = false;
   List<TransaksiItem> _transactions = [];
@@ -79,16 +80,24 @@ class TransaksiViewModel extends ChangeNotifier {
     );
   }
 
-  Future<void> loadProfile({String? emailArgument}) async {
+  Future<void> loadProfile({
+    String? emailArgument,
+    bool forceRefresh = false,
+    bool loadInitialTransactions = true,
+  }) async {
     if (_loadingProfile) return;
     _setLoadingProfile(true);
 
     try {
       final firebaseUser = FirebaseAccountService.currentUser;
-      final email = emailArgument ?? firebaseUser?.email;
+      final email = emailArgument ?? firebaseUser?.email ?? _currentEmail;
+      _currentEmail = email;
 
       if (email != null && email.isNotEmpty) {
-        final record = await AppCacheService.fetchNasabahByEmail(email);
+        final record = await AppCacheService.fetchNasabahByEmail(
+          email,
+          forceRefresh: forceRefresh,
+        );
 
         if (record != null) {
           final nasabahId = (record['id_nasabah'] as num?)?.toInt();
@@ -98,8 +107,13 @@ class TransaksiViewModel extends ChangeNotifier {
           _nasabahId = nasabahId;
           _notify();
 
-          if (nasabahId != null && !_hasLoadedTransactions) {
-            await loadTransactions(pendingOnly: true);
+          if (nasabahId != null &&
+              loadInitialTransactions &&
+              !_hasLoadedTransactions) {
+            await loadTransactions(
+              pendingOnly: true,
+              forceRefresh: forceRefresh,
+            );
           }
         }
       }
@@ -108,6 +122,19 @@ class TransaksiViewModel extends ChangeNotifier {
     } finally {
       _setLoadingProfile(false);
     }
+  }
+
+  Future<void> refresh({String? emailArgument}) async {
+    await loadProfile(
+      emailArgument: emailArgument,
+      forceRefresh: true,
+      loadInitialTransactions: false,
+    );
+    await loadTransactions(
+      pendingOnly: !_hasSearched,
+      page: _currentPage,
+      forceRefresh: true,
+    );
   }
 
   Future<void> loadTransactions({

@@ -44,6 +44,7 @@ class RiwayatViewModel extends ChangeNotifier {
 
   String? _fetchedUserName;
   bool _loadingProfile = false;
+  String? _currentEmail;
   int? _nasabahId;
   bool _loadingRiwayat = false;
   List<Map<String, dynamic>> _riwayatItems = [];
@@ -76,16 +77,24 @@ class RiwayatViewModel extends ChangeNotifier {
     );
   }
 
-  Future<void> loadProfile({String? emailArgument}) async {
+  Future<void> loadProfile({
+    String? emailArgument,
+    bool forceRefresh = false,
+    bool loadInitialRiwayat = true,
+  }) async {
     if (_loadingProfile) return;
     _setLoadingProfile(true);
 
     try {
       final firebaseUser = FirebaseAccountService.currentUser;
-      final email = emailArgument ?? firebaseUser?.email;
+      final email = emailArgument ?? firebaseUser?.email ?? _currentEmail;
+      _currentEmail = email;
 
       if (email != null && email.isNotEmpty) {
-        final record = await AppCacheService.fetchNasabahByEmail(email);
+        final record = await AppCacheService.fetchNasabahByEmail(
+          email,
+          forceRefresh: forceRefresh,
+        );
 
         if (record != null) {
           final nasabahId = (record['id_nasabah'] as num?)?.toInt();
@@ -95,8 +104,8 @@ class RiwayatViewModel extends ChangeNotifier {
           _nasabahId = nasabahId;
           _notify();
 
-          if (nasabahId != null && !_hasLoadedRiwayat) {
-            await loadRiwayat(pendingOnly: true);
+          if (nasabahId != null && loadInitialRiwayat && !_hasLoadedRiwayat) {
+            await loadRiwayat(pendingOnly: true, forceRefresh: forceRefresh);
           }
         }
       }
@@ -105,6 +114,21 @@ class RiwayatViewModel extends ChangeNotifier {
     } finally {
       _setLoadingProfile(false);
     }
+  }
+
+  Future<void> refresh({String? emailArgument}) async {
+    await loadProfile(
+      emailArgument: emailArgument,
+      forceRefresh: true,
+      loadInitialRiwayat: false,
+    );
+    await loadRiwayat(
+      from: _hasSearched ? _fromDate : null,
+      to: _hasSearched ? _toDate : null,
+      pendingOnly: !_hasSearched,
+      page: _currentPage,
+      forceRefresh: true,
+    );
   }
 
   Future<void> loadRiwayat({

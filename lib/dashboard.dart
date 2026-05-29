@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:mob_2/email_verification_notice.dart';
 import 'package:mob_2/viewmodels/dashboard_view_model.dart';
+import 'package:mob_2/widgets/greenpoint_header.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
@@ -32,6 +33,17 @@ class _DashboardScreenState extends State<DashboardScreen> {
     final redirect = await _viewModel.loadUserProfile(
       emailArgument: _routeEmailArgument,
     );
+    _handleVerificationRedirect(redirect);
+  }
+
+  Future<void> _refreshDashboard() async {
+    final redirect = await _viewModel.refreshDashboard(
+      emailArgument: _routeEmailArgument,
+    );
+    _handleVerificationRedirect(redirect);
+  }
+
+  void _handleVerificationRedirect(DashboardVerificationRedirect? redirect) {
     if (!mounted || redirect == null) return;
 
     Navigator.of(context).pushReplacement(
@@ -60,313 +72,140 @@ class _DashboardScreenState extends State<DashboardScreen> {
         final saldoText = viewModel.saldoText;
         final level = viewModel.level;
         final progress = viewModel.monthlyWeightProgress;
+        final recentSetor = viewModel.recentSetor;
+        final recentPpob = viewModel.recentPpob;
 
         return ColoredBox(
           color: Colors.white,
-          child: SingleChildScrollView(
-            child: Container(
-              width: double.infinity,
-              color: Colors.white,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Container(
-                    padding: const EdgeInsetsDirectional.fromSTEB(
-                      20,
-                      40,
-                      20,
-                      30,
+          child: RefreshIndicator(
+            color: const Color(0xFF315A39),
+            backgroundColor: Colors.white,
+            onRefresh: _refreshDashboard,
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: Container(
+                width: double.infinity,
+                color: Colors.white,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    GreenPointHeader(
+                      eyebrow: DashboardViewModel.greeting,
+                      title: viewModel.userName,
+                      subtitle: 'Siap setor sampah hari ini?',
+                      metaText: viewModel.currentDateText,
+                      avatarText: viewModel.userName,
                     ),
-                    decoration: const BoxDecoration(color: Color(0xFF315A39)),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Opacity(
-                          opacity: 0.8,
-                          child: Text(
-                            DashboardViewModel.greeting,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
+                    Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Dashboard',
+                            style: TextStyle(
+                              color: Color(0xFF333333),
+                              fontSize: 20,
+                              fontFamily: 'Roboto',
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            DashboardViewModel.welcomeMessage,
+                            style: TextStyle(
+                              color: Color(0xFF666666),
+                              fontSize: 14,
                               fontFamily: 'Roboto',
                               fontWeight: FontWeight.w400,
                             ),
                           ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          viewModel.userName,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 24,
-                            fontFamily: 'Roboto',
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Opacity(
-                          opacity: 0.8,
-                          child: Text(
-                            viewModel.currentDateText,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 12,
-                              fontFamily: 'Roboto',
-                              fontWeight: FontWeight.w400,
+                          const SizedBox(height: 20),
+                          if (viewModel.loadingDashboard)
+                            const LinearProgressIndicator(
+                              minHeight: 3,
+                              color: Color(0xFF315A39),
+                              backgroundColor: Color(0xFFE8F5E9),
                             ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Dashboard',
-                          style: TextStyle(
-                            color: Color(0xFF333333),
-                            fontSize: 20,
-                            fontFamily: 'Roboto',
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        const Text(
-                          DashboardViewModel.welcomeMessage,
-                          style: TextStyle(
-                            color: Color(0xFF666666),
-                            fontSize: 14,
-                            fontFamily: 'Roboto',
-                            fontWeight: FontWeight.w400,
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-                        if (viewModel.loadingDashboard)
-                          const LinearProgressIndicator(
-                            minHeight: 3,
-                            color: Color(0xFF315A39),
-                            backgroundColor: Color(0xFFE8F5E9),
-                          ),
-                        if (viewModel.loadingDashboard)
-                          const SizedBox(height: 17),
-                        _DashboardHeroBalance(
-                          saldoText: saldoText,
-                          level: level,
-                          monthWeight: DashboardViewModel.formatWeight(
-                            stats.totalWeightKg,
-                          ),
-                          onTopup: _openTopupSaldo,
-                        ),
-                        const SizedBox(height: 14),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _DashboardQuickAction(
-                                label: 'E-Money',
-                                icon: Icons.account_balance_wallet_rounded,
-                                onTap: _openEmoney,
-                              ),
+                          if (viewModel.loadingDashboard)
+                            const SizedBox(height: 17),
+                          _DashboardHeroBalance(
+                            saldoText: saldoText,
+                            level: level,
+                            monthWeight: DashboardViewModel.formatWeight(
+                              stats.totalWeightKg,
                             ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: _DashboardQuickAction(
-                                label: 'PLN',
-                                icon: Icons.bolt_rounded,
-                                onTap: _openPln,
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: _DashboardQuickAction(
-                                label: 'Pulsa',
-                                icon: Icons.phone_android_rounded,
-                                onTap: _openPulsa,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 22),
-                        GridView.count(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          crossAxisCount: 2,
-                          crossAxisSpacing: 12,
-                          mainAxisSpacing: 12,
-                          childAspectRatio: 1,
-                          children: [
-                            _DashboardMetricCard(
-                              title: 'Setor Bulan Ini',
-                              value: stats.setorCount.toString(),
-                              caption: 'Transaksi',
-                              icon: Icons.recycling_outlined,
-                              onTap: _openRiwayat,
-                            ),
-                            _DashboardMetricCard(
-                              title: 'Berat Bulan Ini',
-                              value: DashboardViewModel.formatWeight(
-                                stats.totalWeightKg,
-                              ),
-                              caption: 'Total sampah',
-                              icon: Icons.scale_outlined,
-                              onTap: _openRiwayat,
-                            ),
-                            _DashboardMetricCard(
-                              title: 'Saldo Masuk',
-                              value: DashboardViewModel.formatRupiah(
-                                stats.completedSetorValue,
-                              ),
-                              caption: 'Dari setor selesai',
-                              icon: Icons.savings_outlined,
-                              onTap: _openRiwayat,
-                            ),
-                            _DashboardMetricCard(
-                              title: 'PPOB Bulan Ini',
-                              value: DashboardViewModel.formatRupiah(
-                                stats.ppobAmount,
-                              ),
-                              caption: '${stats.ppobCount} transaksi',
-                              icon: Icons.receipt_long_outlined,
-                              onTap: _openTransaksi,
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 24),
-                        _DashboardImpactCard(
-                          currentWeightText: DashboardViewModel.formatWeight(
-                            stats.totalWeightKg,
+                            onTopup: _openTopupSaldo,
                           ),
-                          targetWeightText: DashboardViewModel.formatWeight(
-                            DashboardViewModel.monthlyWeightTargetKg,
-                          ),
-                          progress: progress,
-                        ),
-                        const SizedBox(height: 24),
-                        const _DashboardSectionTitle(
-                          title: 'Ringkasan Bulan Ini',
-                        ),
-                        const SizedBox(height: 12),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF6F8F6),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: const Color(0xFFE4EAE4)),
-                          ),
-                          child: Column(
+                          const SizedBox(height: 14),
+                          Row(
                             children: [
-                              _DashboardSummaryRow(
-                                label: 'Setor bulan ini',
-                                value: '${stats.setorCount} transaksi',
-                              ),
-                              _DashboardSummaryRow(
-                                label: 'Total berat bulan ini',
-                                value: DashboardViewModel.formatWeight(
-                                  stats.totalWeightKg,
+                              Expanded(
+                                child: _DashboardQuickAction(
+                                  label: 'E-Money',
+                                  icon: Icons.account_balance_wallet_rounded,
+                                  onTap: _openEmoney,
                                 ),
                               ),
-                              _DashboardSummaryRow(
-                                label: 'Saldo masuk dari setor',
-                                value: DashboardViewModel.formatRupiah(
-                                  stats.completedSetorValue,
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: _DashboardQuickAction(
+                                  label: 'PLN',
+                                  icon: Icons.bolt_rounded,
+                                  onTap: _openPln,
                                 ),
                               ),
-                              _DashboardSummaryRow(
-                                label: 'PPOB bulan ini',
-                                value: DashboardViewModel.formatRupiah(
-                                  stats.ppobAmount,
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: _DashboardQuickAction(
+                                  label: 'Pulsa',
+                                  icon: Icons.phone_android_rounded,
+                                  onTap: _openPulsa,
                                 ),
                               ),
-                              if (stats.withdrawalCount > 0)
-                                _DashboardSummaryRow(
-                                  label: 'Penarikan saldo',
-                                  value:
-                                      '${DashboardViewModel.formatRupiah(stats.withdrawalAmount)} (${stats.withdrawalCount})',
-                                  isLast: true,
-                                )
-                              else
-                                const _DashboardSummaryRow(
-                                  label: 'Penarikan saldo',
-                                  value: 'Belum ada',
-                                  isLast: true,
-                                ),
                             ],
                           ),
-                        ),
-                        const SizedBox(height: 24),
-                        const _DashboardSectionTitle(title: 'Status Setor'),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: _DashboardStatusTile(
-                                label: 'Menunggu',
-                                value: stats.waitingSetorCount,
-                                color: const Color(0xFFB7791F),
-                              ),
+                          const SizedBox(height: 22),
+                          _DashboardMonthlySummaryCard(
+                            totalWeightText: DashboardViewModel.formatWeight(
+                              stats.totalWeightKg,
                             ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: _DashboardStatusTile(
-                                label: 'Selesai',
-                                value: stats.completedSetorCount,
-                                color: const Color(0xFF2E7D32),
-                              ),
+                            targetWeightText: DashboardViewModel.formatWeight(
+                              DashboardViewModel.monthlyWeightTargetKg,
                             ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: _DashboardStatusTile(
-                                label: 'Ditolak',
-                                value: stats.rejectedSetorCount,
-                                color: const Color(0xFFB71C1C),
-                              ),
+                            saldoMasukText: DashboardViewModel.formatRupiah(
+                              stats.completedSetorValue,
                             ),
-                          ],
-                        ),
-                        const SizedBox(height: 24),
-                        _DashboardRecentSection(
-                          title: 'Transaksi Setor Terbaru',
-                          emptyText: 'Belum ada transaksi setor.',
-                          onTap: _openRiwayat,
-                          children: viewModel.recentSetor
-                              .map(
-                                (item) => _DashboardRecentTile(
-                                  title: item.title,
-                                  subtitle: item.subtitle,
-                                  amount: item.amount,
-                                  date: item.date,
-                                  icon: Icons.recycling_rounded,
-                                  onTap: _openRiwayat,
-                                ),
-                              )
-                              .toList(),
-                        ),
-                        const SizedBox(height: 20),
-                        _DashboardRecentSection(
-                          title: 'Transaksi PPOB Terbaru',
-                          emptyText: 'Belum ada transaksi PPOB.',
-                          onTap: _openTransaksi,
-                          children: viewModel.recentPpob
-                              .map(
-                                (item) => _DashboardRecentTile(
-                                  title: item.title,
-                                  subtitle: item.subtitle,
-                                  amount: item.amount,
-                                  date: item.date,
-                                  icon: Icons.receipt_long_rounded,
-                                  onTap: _openTransaksi,
-                                ),
-                              )
-                              .toList(),
-                        ),
-                        const SizedBox(height: 80),
-                      ],
+                            ppobAmountText: DashboardViewModel.formatRupiah(
+                              stats.ppobAmount,
+                            ),
+                            progress: progress,
+                            setorCount: stats.setorCount,
+                            ppobCount: stats.ppobCount,
+                            onRiwayat: _openRiwayat,
+                            onTransaksi: _openTransaksi,
+                          ),
+                          const SizedBox(height: 14),
+                          _DashboardSetorStatusCard(
+                            waitingCount: stats.waitingSetorCount,
+                            completedCount: stats.completedSetorCount,
+                            rejectedCount: stats.rejectedSetorCount,
+                          ),
+                          const SizedBox(height: 14),
+                          _DashboardLatestActivityCard(
+                            setor: recentSetor.isEmpty
+                                ? null
+                                : recentSetor.first,
+                            ppob: recentPpob.isEmpty ? null : recentPpob.first,
+                            onRiwayat: _openRiwayat,
+                            onTransaksi: _openTransaksi,
+                          ),
+                          const SizedBox(height: 80),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
@@ -392,61 +231,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
   }
 
   void _openTopupSaldo() {
-    Navigator.of(
-      context,
-    ).pushReplacementNamed('/topup-saldo', arguments: _routeArguments);
+    Navigator.of(context).pushNamed('/topup-saldo', arguments: _routeArguments);
   }
 
   void _openEmoney() {
-    Navigator.of(
-      context,
-    ).pushReplacementNamed('/emoney', arguments: _routeArguments);
+    Navigator.of(context).pushNamed('/emoney', arguments: _routeArguments);
   }
 
   void _openPln() {
-    Navigator.of(
-      context,
-    ).pushReplacementNamed('/pln', arguments: _routeArguments);
+    Navigator.of(context).pushNamed('/pln', arguments: _routeArguments);
   }
 
   void _openPulsa() {
-    Navigator.of(
-      context,
-    ).pushReplacementNamed('/pulsa', arguments: _routeArguments);
-  }
-}
-
-class _DashboardSectionTitle extends StatelessWidget {
-  const _DashboardSectionTitle({required this.title, this.onTap});
-
-  final String title;
-  final VoidCallback? onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Expanded(
-          child: Text(
-            title,
-            style: const TextStyle(
-              color: Color(0xFF333333),
-              fontSize: 16,
-              fontFamily: 'Roboto',
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ),
-        if (onTap != null)
-          IconButton(
-            onPressed: onTap,
-            icon: const Icon(Icons.chevron_right_rounded),
-            color: const Color(0xFF315A39),
-            constraints: const BoxConstraints(minWidth: 40, minHeight: 40),
-            padding: EdgeInsets.zero,
-          ),
-      ],
-    );
+    Navigator.of(context).pushNamed('/pulsa', arguments: _routeArguments);
   }
 }
 
@@ -643,26 +440,47 @@ class _DashboardQuickAction extends StatelessWidget {
   }
 }
 
-class _DashboardImpactCard extends StatelessWidget {
-  const _DashboardImpactCard({
-    required this.currentWeightText,
+class _DashboardMonthlySummaryCard extends StatelessWidget {
+  const _DashboardMonthlySummaryCard({
+    required this.totalWeightText,
     required this.targetWeightText,
+    required this.saldoMasukText,
+    required this.ppobAmountText,
     required this.progress,
+    required this.setorCount,
+    required this.ppobCount,
+    required this.onRiwayat,
+    required this.onTransaksi,
   });
 
-  final String currentWeightText;
+  final String totalWeightText;
   final String targetWeightText;
+  final String saldoMasukText;
+  final String ppobAmountText;
   final double progress;
+  final int setorCount;
+  final int ppobCount;
+  final VoidCallback onRiwayat;
+  final VoidCallback onTransaksi;
 
   @override
   Widget build(BuildContext context) {
+    final progressPercent = (progress * 100).round();
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFEFF8F1),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFD9EADB)),
+        color: const Color(0xFFF3F8F0),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFDDE9D9)),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF315A39).withValues(alpha: 0.07),
+            blurRadius: 16,
+            offset: const Offset(0, 8),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -670,8 +488,8 @@ class _DashboardImpactCard extends StatelessWidget {
           Row(
             children: [
               Container(
-                width: 34,
-                height: 34,
+                width: 38,
+                height: 38,
                 decoration: BoxDecoration(
                   color: const Color(0xFF315A39),
                   borderRadius: BorderRadius.circular(8),
@@ -679,49 +497,173 @@ class _DashboardImpactCard extends StatelessWidget {
                 child: const Icon(
                   Icons.eco_outlined,
                   color: Colors.white,
-                  size: 20,
+                  size: 21,
                 ),
               ),
               const SizedBox(width: 10),
               const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Ringkasan Bulan Ini',
+                      style: TextStyle(
+                        color: Color(0xFF333333),
+                        fontSize: 15,
+                        fontFamily: 'Roboto',
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    SizedBox(height: 3),
+                    Text(
+                      'Pantau setor dan pemakaian saldo',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: Color(0xFF68756B),
+                        fontSize: 11,
+                        fontFamily: 'Roboto',
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF4D7),
+                  borderRadius: BorderRadius.circular(8),
+                ),
                 child: Text(
-                  'Dampak Lingkungan',
-                  style: TextStyle(
-                    color: Color(0xFF333333),
-                    fontSize: 15,
+                  '$progressPercent%',
+                  style: const TextStyle(
+                    color: Color(0xFF8A5B00),
+                    fontSize: 12,
                     fontFamily: 'Roboto',
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w900,
                   ),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 14),
-          Text(
-            '$currentWeightText sampah terkumpul bulan ini',
-            style: const TextStyle(
-              color: Color(0xFF315A39),
-              fontSize: 17,
-              fontFamily: 'Roboto',
-              fontWeight: FontWeight.w900,
-            ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(
+                child: _DashboardHighlightStat(
+                  label: 'Sampah',
+                  value: totalWeightText,
+                  caption: 'Target $targetWeightText',
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _DashboardHighlightStat(
+                  label: 'Saldo Masuk',
+                  value: saldoMasukText,
+                  caption: 'Dari setor selesai',
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 14),
           ClipRRect(
             borderRadius: BorderRadius.circular(999),
             child: LinearProgressIndicator(
               value: progress,
-              minHeight: 9,
+              minHeight: 8,
               color: const Color(0xFF315A39),
               backgroundColor: Colors.white,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: _DashboardMiniActionStat(
+                  icon: Icons.recycling_rounded,
+                  label: 'Setor Sampah',
+                  value: '$setorCount kali',
+                  caption: 'Bulan ini',
+                  onTap: onRiwayat,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _DashboardMiniActionStat(
+                  icon: Icons.receipt_long_rounded,
+                  label: 'PPOB',
+                  value: '$ppobCount kali',
+                  caption: ppobAmountText,
+                  onTap: onTransaksi,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DashboardHighlightStat extends StatelessWidget {
+  const _DashboardHighlightStat({
+    required this.label,
+    required this.value,
+    required this.caption,
+  });
+
+  final String label;
+  final String value;
+  final String caption;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 76,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE2EAE1)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
           Text(
-            'Target bulanan $targetWeightText',
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
-              color: Color(0xFF666666),
-              fontSize: 12,
+              color: Color(0xFF68756B),
+              fontSize: 11,
+              fontFamily: 'Roboto',
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              value,
+              maxLines: 1,
+              style: const TextStyle(
+                color: Color(0xFF315A39),
+                fontSize: 19,
+                fontFamily: 'Roboto',
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          Text(
+            caption,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Color(0xFF7A867E),
+              fontSize: 10,
               fontFamily: 'Roboto',
               fontWeight: FontWeight.w500,
             ),
@@ -732,20 +674,20 @@ class _DashboardImpactCard extends StatelessWidget {
   }
 }
 
-class _DashboardMetricCard extends StatelessWidget {
-  const _DashboardMetricCard({
-    required this.title,
-    required this.value,
-    required this.caption,
+class _DashboardMiniActionStat extends StatelessWidget {
+  const _DashboardMiniActionStat({
     required this.icon,
-    this.onTap,
+    required this.label,
+    required this.value,
+    required this.onTap,
+    this.caption,
   });
 
-  final String title;
-  final String value;
-  final String caption;
   final IconData icon;
-  final VoidCallback? onTap;
+  final String label;
+  final String value;
+  final String? caption;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -753,75 +695,58 @@ class _DashboardMetricCard extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(8),
         child: Ink(
-          padding: const EdgeInsets.all(14),
+          height: 58,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
           decoration: BoxDecoration(
-            color: const Color(0xFFF6F8F6),
-            borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: const Color(0xFFE4EAE4)),
+            color: const Color(0xFFEAF3E9),
+            borderRadius: BorderRadius.circular(8),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Row(
             children: [
-              Row(
-                children: [
-                  Container(
-                    width: 34,
-                    height: 34,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFE8F5E9),
-                      borderRadius: BorderRadius.circular(8),
+              Icon(icon, color: const Color(0xFF315A39), size: 21),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF333333),
+                        fontSize: 11,
+                        fontFamily: 'Roboto',
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
-                    child: Icon(icon, color: const Color(0xFF315A39), size: 20),
-                  ),
-                  const Spacer(),
-                  if (onTap != null)
-                    const Icon(
-                      Icons.chevron_right_rounded,
-                      color: Color(0xFF7A867E),
-                      size: 20,
+                    const SizedBox(height: 3),
+                    Text(
+                      caption ?? value,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF315A39),
+                        fontSize: 12,
+                        fontFamily: 'Roboto',
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
-                ],
-              ),
-              const Spacer(),
-              Text(
-                title,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Color(0xFF666666),
-                  fontSize: 12,
-                  fontFamily: 'Roboto',
-                  fontWeight: FontWeight.w500,
-                  height: 1.2,
+                  ],
                 ),
               ),
-              const SizedBox(height: 6),
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.centerLeft,
-                child: Text(
-                  value,
-                  maxLines: 1,
-                  style: const TextStyle(
-                    color: Color(0xFF315A39),
-                    fontSize: 19,
-                    fontFamily: 'Roboto',
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 4),
               Text(
-                caption,
+                value,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
-                  color: Color(0xFF7A867E),
-                  fontSize: 11,
+                  color: Color(0xFF68756B),
+                  fontSize: 10,
                   fontFamily: 'Roboto',
-                  fontWeight: FontWeight.w400,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ],
@@ -832,61 +757,75 @@ class _DashboardMetricCard extends StatelessWidget {
   }
 }
 
-class _DashboardSummaryRow extends StatelessWidget {
-  const _DashboardSummaryRow({
-    required this.label,
-    required this.value,
-    this.isLast = false,
+class _DashboardSetorStatusCard extends StatelessWidget {
+  const _DashboardSetorStatusCard({
+    required this.waitingCount,
+    required this.completedCount,
+    required this.rejectedCount,
   });
 
-  final String label;
-  final String value;
-  final bool isLast;
+  final int waitingCount;
+  final int completedCount;
+  final int rejectedCount;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                label,
-                style: const TextStyle(
-                  color: Color(0xFF666666),
-                  fontSize: 13,
-                  fontFamily: 'Roboto',
-                  fontWeight: FontWeight.w400,
-                ),
-              ),
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFBFCFB),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE4EAE4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Status Setor',
+            style: TextStyle(
+              color: Color(0xFF333333),
+              fontSize: 14,
+              fontFamily: 'Roboto',
+              fontWeight: FontWeight.w800,
             ),
-            const SizedBox(width: 12),
-            Flexible(
-              child: Text(
-                value,
-                textAlign: TextAlign.right,
-                style: const TextStyle(
-                  color: Color(0xFF333333),
-                  fontSize: 13,
-                  fontFamily: 'Roboto',
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ],
-        ),
-        if (!isLast)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 10),
-            child: Divider(height: 1, color: Color(0xFFE4EAE4)),
           ),
-      ],
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _DashboardStatusChip(
+                  label: 'Menunggu',
+                  value: waitingCount,
+                  color: Color(0xFFB7791F),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _DashboardStatusChip(
+                  label: 'Selesai',
+                  value: completedCount,
+                  color: Color(0xFF2E7D32),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _DashboardStatusChip(
+                  label: 'Ditolak',
+                  value: rejectedCount,
+                  color: Color(0xFFB71C1C),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
 
-class _DashboardStatusTile extends StatelessWidget {
-  const _DashboardStatusTile({
+class _DashboardStatusChip extends StatelessWidget {
+  const _DashboardStatusChip({
     required this.label,
     required this.value,
     required this.color,
@@ -899,11 +838,11 @@ class _DashboardStatusTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 78,
-      padding: const EdgeInsets.all(10),
+      height: 64,
+      padding: const EdgeInsets.all(9),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(10),
+        color: color.withValues(alpha: 0.09),
+        borderRadius: BorderRadius.circular(8),
         border: Border.all(color: color.withValues(alpha: 0.22)),
       ),
       child: Column(
@@ -915,11 +854,12 @@ class _DashboardStatusTile extends StatelessWidget {
             alignment: Alignment.centerLeft,
             child: Text(
               value.toString(),
+              maxLines: 1,
               style: TextStyle(
                 color: color,
-                fontSize: 22,
+                fontSize: 21,
                 fontFamily: 'Roboto',
-                fontWeight: FontWeight.w800,
+                fontWeight: FontWeight.w900,
               ),
             ),
           ),
@@ -929,9 +869,9 @@ class _DashboardStatusTile extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               color: Color(0xFF333333),
-              fontSize: 12,
+              fontSize: 11,
               fontFamily: 'Roboto',
-              fontWeight: FontWeight.w600,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ],
@@ -940,129 +880,147 @@ class _DashboardStatusTile extends StatelessWidget {
   }
 }
 
-class _DashboardRecentSection extends StatelessWidget {
-  const _DashboardRecentSection({
-    required this.title,
-    required this.emptyText,
-    required this.children,
-    required this.onTap,
+class _DashboardLatestActivityCard extends StatelessWidget {
+  const _DashboardLatestActivityCard({
+    required this.setor,
+    required this.ppob,
+    required this.onRiwayat,
+    required this.onTransaksi,
   });
 
-  final String title;
-  final String emptyText;
-  final List<Widget> children;
-  final VoidCallback onTap;
+  final DashboardSetorPreview? setor;
+  final DashboardPpobPreview? ppob;
+  final VoidCallback onRiwayat;
+  final VoidCallback onTransaksi;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _DashboardSectionTitle(title: title, onTap: onTap),
-        const SizedBox(height: 12),
-        if (children.isEmpty)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF6F8F6),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: const Color(0xFFE4EAE4)),
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFBFCFB),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE4EAE4)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Aktivitas Terbaru',
+            style: TextStyle(
+              color: Color(0xFF333333),
+              fontSize: 14,
+              fontFamily: 'Roboto',
+              fontWeight: FontWeight.w800,
             ),
-            child: Text(
-              emptyText,
-              style: const TextStyle(
-                color: Color(0xFF7A867E),
-                fontSize: 13,
-                fontFamily: 'Roboto',
-                fontWeight: FontWeight.w400,
-              ),
-            ),
-          )
-        else
-          Column(children: children),
-      ],
+          ),
+          const SizedBox(height: 12),
+          _DashboardLatestActivityRow(
+            icon: Icons.recycling_rounded,
+            title: setor?.title ?? 'Setor Sampah',
+            subtitle: setor?.subtitle ?? 'Belum ada transaksi setor',
+            amount: setor?.amount ?? '-',
+            date: setor?.date,
+            onTap: onRiwayat,
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 9),
+            child: Divider(height: 1, color: Color(0xFFE4EAE4)),
+          ),
+          _DashboardLatestActivityRow(
+            icon: Icons.receipt_long_rounded,
+            title: ppob?.title ?? 'Transaksi PPOB',
+            subtitle: ppob?.subtitle ?? 'Belum ada transaksi PPOB',
+            amount: ppob?.amount ?? '-',
+            date: ppob?.date,
+            onTap: onTransaksi,
+          ),
+        ],
+      ),
     );
   }
 }
 
-class _DashboardRecentTile extends StatelessWidget {
-  const _DashboardRecentTile({
+class _DashboardLatestActivityRow extends StatelessWidget {
+  const _DashboardLatestActivityRow({
+    required this.icon,
     required this.title,
     required this.subtitle,
     required this.amount,
-    required this.date,
-    required this.icon,
+    this.date,
     required this.onTap,
   });
 
+  final IconData icon;
   final String title;
   final String subtitle;
   final String amount;
-  final String date;
-  final IconData icon;
+  final String? date;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(10),
-          child: Ink(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF6F8F6),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: const Color(0xFFE4EAE4)),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFE8F5E9),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(icon, color: const Color(0xFF315A39), size: 20),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Ink(
+          height: 58,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF6F8F6),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFE8F5E9),
+                  borderRadius: BorderRadius.circular(8),
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Color(0xFF333333),
-                          fontSize: 13,
-                          fontFamily: 'Roboto',
-                          fontWeight: FontWeight.w700,
-                        ),
+                child: Icon(icon, color: const Color(0xFF315A39), size: 20),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF333333),
+                        fontSize: 13,
+                        fontFamily: 'Roboto',
+                        fontWeight: FontWeight.w800,
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        subtitle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: Color(0xFF7A867E),
-                          fontSize: 12,
-                          fontFamily: 'Roboto',
-                          fontWeight: FontWeight.w400,
-                        ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF7A867E),
+                        fontSize: 11,
+                        fontFamily: 'Roboto',
+                        fontWeight: FontWeight.w500,
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 10),
-                Column(
+              ),
+              const SizedBox(width: 10),
+              SizedBox(
+                width: 86,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
@@ -1071,31 +1029,34 @@ class _DashboardRecentTile extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: Color(0xFF315A39),
-                        fontSize: 13,
+                        fontSize: 12,
                         fontFamily: 'Roboto',
-                        fontWeight: FontWeight.w800,
+                        fontWeight: FontWeight.w900,
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      date,
-                      style: const TextStyle(
-                        color: Color(0xFF7A867E),
-                        fontSize: 11,
-                        fontFamily: 'Roboto',
-                        fontWeight: FontWeight.w400,
+                    if (date != null) ...[
+                      const SizedBox(height: 3),
+                      Text(
+                        date!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFF7A867E),
+                          fontSize: 10,
+                          fontFamily: 'Roboto',
+                          fontWeight: FontWeight.w500,
+                        ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
-                const SizedBox(width: 4),
-                const Icon(
-                  Icons.chevron_right_rounded,
-                  size: 20,
-                  color: Color(0xFF7A867E),
-                ),
-              ],
-            ),
+              ),
+              const Icon(
+                Icons.chevron_right_rounded,
+                color: Color(0xFF7A867E),
+                size: 20,
+              ),
+            ],
           ),
         ),
       ),
@@ -1171,8 +1132,8 @@ class DashboardBottomNavigation extends StatelessWidget {
     final screenHeight = MediaQuery.sizeOf(context).height;
     final screenWidth = MediaQuery.sizeOf(context).width;
 
-    // Responsive height: 7-9% of screen height, with min 56 and max 80
-    final navHeight = fixedHeight ?? (screenHeight * 0.08).clamp(56.0, 80.0);
+    // Keep enough room for the active circular item without making the bar tall.
+    final navHeight = fixedHeight ?? (screenHeight * 0.086).clamp(72.0, 84.0);
 
     // Responsive padding: larger padding on wider screens
     final responsivePaddingHorizontal = screenWidth > 600
@@ -1254,7 +1215,6 @@ class DashboardBottomNavigation extends StatelessWidget {
   }
 }
 
-// Optional: Enhanced _BottomNavItem with responsive sizing
 class _BottomNavItem extends StatelessWidget {
   const _BottomNavItem({
     required this.iconAsset,
@@ -1275,54 +1235,121 @@ class _BottomNavItem extends StatelessWidget {
     final screenWidth = MediaQuery.sizeOf(context).width;
     final isTablet = screenWidth > 600;
 
-    // Responsive icon size
-    final iconSize = isTablet ? 28.0 : 24.0;
+    final activeBubbleSize = isTablet ? 48.0 : 42.0;
+    final inactiveBubbleSize = isTablet ? 32.0 : 30.0;
+    final bubbleSize = isActive ? activeBubbleSize : inactiveBubbleSize;
 
-    // Responsive font size
-    final fontSize = isTablet ? 14.0 : 12.0;
+    final activeIconSize = isTablet ? 25.0 : 22.0;
+    final inactiveIconSize = isTablet ? 23.0 : 21.0;
+    final iconSize = isActive ? activeIconSize : inactiveIconSize;
 
-    // Active color - you can customize this
-    final activeColor = const Color.fromARGB(255, 33, 90, 36);
-    final inactiveColor = const Color.fromARGB(255, 187, 186, 186);
+    final activeFontSize = isTablet ? 12.5 : 10.8;
+    final inactiveFontSize = isTablet ? 11.5 : 10.0;
+    final fontSize = isActive ? activeFontSize : inactiveFontSize;
+
+    final activeColor = const Color(0xFF254B2E);
+    final inactiveColor = const Color(0xFFA8AFA8);
 
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        curve: Curves.easeInOut,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            // Icon with animation
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 200),
-              child: Image.asset(
-                iconAsset,
-                key: ValueKey(iconAsset),
-                width: iconSize,
-                height: iconSize,
-                color: isActive ? activeColor : inactiveColor,
-                errorBuilder: (context, error, stackTrace) => Icon(
-                  fallbackIcon,
-                  size: iconSize,
-                  color: isActive ? activeColor : inactiveColor,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final itemHeight = constraints.maxHeight.isFinite
+              ? constraints.maxHeight
+              : 72.0;
+
+          return SizedBox(
+            height: itemHeight,
+            child: Center(
+              child: AnimatedSlide(
+                offset: isActive ? const Offset(0, -0.04) : Offset.zero,
+                duration: const Duration(milliseconds: 260),
+                curve: Curves.easeOutCubic,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 260),
+                      curve: Curves.easeOutCubic,
+                      width: bubbleSize,
+                      height: bubbleSize,
+                      decoration: BoxDecoration(
+                        color: isActive ? activeColor : Colors.transparent,
+                        shape: BoxShape.circle,
+                        boxShadow: isActive
+                            ? [
+                                BoxShadow(
+                                  color: activeColor.withValues(alpha: 0.16),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ]
+                            : null,
+                      ),
+                      child: Center(
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 220),
+                          switchInCurve: Curves.easeOutCubic,
+                          switchOutCurve: Curves.easeInCubic,
+                          child: Image.asset(
+                            iconAsset,
+                            key: ValueKey(iconAsset),
+                            width: iconSize,
+                            height: iconSize,
+                            color: isActive ? Colors.white : inactiveColor,
+                            errorBuilder: (context, error, stackTrace) => Icon(
+                              fallbackIcon,
+                              size: iconSize,
+                              color: isActive ? Colors.white : inactiveColor,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    SizedBox(
+                      height: isTablet ? 15 : 13,
+                      child: Center(
+                        child: AnimatedDefaultTextStyle(
+                          duration: const Duration(milliseconds: 220),
+                          curve: Curves.easeOutCubic,
+                          style: TextStyle(
+                            fontSize: fontSize,
+                            fontWeight: isActive
+                                ? FontWeight.w800
+                                : FontWeight.w500,
+                            color: isActive ? activeColor : inactiveColor,
+                            height: 1,
+                          ),
+                          child: Text(
+                            label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 220),
+                      curve: Curves.easeOutCubic,
+                      width: isActive ? 16 : 0,
+                      height: 3,
+                      decoration: BoxDecoration(
+                        color: activeColor.withValues(
+                          alpha: isActive ? 0.9 : 0,
+                        ),
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
-            const SizedBox(height: 4),
-            // Label with animation
-            AnimatedDefaultTextStyle(
-              duration: const Duration(milliseconds: 200),
-              style: TextStyle(
-                fontSize: fontSize,
-                fontWeight: isActive ? FontWeight.w600 : FontWeight.w400,
-                color: isActive ? activeColor : inactiveColor,
-              ),
-              child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
-            ),
-          ],
-        ),
+          );
+        },
       ),
     );
   }

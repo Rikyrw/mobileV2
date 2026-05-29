@@ -85,7 +85,7 @@ class ProfileViewModel extends ChangeNotifier {
 
     try {
       final firebaseUser = FirebaseAccountService.currentUser;
-      final email = emailArgument ?? firebaseUser?.email;
+      final email = emailArgument ?? firebaseUser?.email ?? _currentEmail;
       _currentEmail = email;
       _notify();
 

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'viewmodels/edit_profile_view_model.dart';
+import 'widgets/greenpoint_header.dart';
 
 class PerbaruiProfilScreen extends StatefulWidget {
   final Map<String, dynamic>? userData;
@@ -91,19 +92,21 @@ class _PerbaruiProfilScreenState extends State<PerbaruiProfilScreen> {
 
         return Scaffold(
           backgroundColor: Colors.white,
-          appBar: AppBar(
-            backgroundColor: const Color(0xFF315A39),
-            elevation: 0,
-            leading: IconButton(
-              icon: const Icon(Icons.arrow_back, color: Colors.white),
-              onPressed: () => Navigator.of(context).pop(),
-            ),
-            title: const Text(
-              'Perbarui Profil',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
+          appBar: PreferredSize(
+            preferredSize: const Size.fromHeight(100),
+            child: GreenPointHeader(
+              title: 'Perbarui Profil',
+              subtitle: 'Lengkapi data akun Green Point',
+              avatarText: etNama.text.isNotEmpty
+                  ? etNama.text
+                  : etUsername.text,
+              avatarSize: 58,
+              contentAlignment: CrossAxisAlignment.center,
+              textAlign: TextAlign.center,
+              leading: GreenPointHeaderIconButton(
+                icon: Icons.arrow_back_rounded,
+                tooltip: 'Kembali',
+                onPressed: () => Navigator.of(context).pop(),
               ),
             ),
           ),

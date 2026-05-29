@@ -24,6 +24,7 @@ class MainTabScaffold extends StatefulWidget {
 
 class _MainTabScaffoldState extends State<MainTabScaffold> {
   late final MainTabViewModel _viewModel;
+  late final PageController _pageController;
   late final List<Widget?> _pages;
 
   @override
@@ -33,6 +34,7 @@ class _MainTabScaffoldState extends State<MainTabScaffold> {
       maxIndex: MainTabScaffold.profilIndex,
       initialIndex: widget.initialIndex,
     );
+    _pageController = PageController(initialPage: _viewModel.selectedIndex);
     _pages = List<Widget?>.filled(MainTabScaffold.profilIndex + 1, null);
     _ensurePage(_viewModel.selectedIndex);
   }
@@ -43,18 +45,45 @@ class _MainTabScaffoldState extends State<MainTabScaffold> {
     if (oldWidget.initialIndex != widget.initialIndex) {
       _viewModel.updateInitialIndex(widget.initialIndex);
       _ensurePage(_viewModel.selectedIndex);
+      _jumpToSelectedPage();
     }
   }
 
   @override
   void dispose() {
+    _pageController.dispose();
     _viewModel.dispose();
     super.dispose();
   }
 
   void _selectTab(int index) {
+    final previousIndex = _viewModel.selectedIndex;
     _viewModel.selectTab(index);
     _ensurePage(_viewModel.selectedIndex);
+    if (previousIndex != _viewModel.selectedIndex) {
+      _animateToSelectedPage();
+    }
+  }
+
+  void _handlePageChanged(int index) {
+    _viewModel.selectTab(index);
+    _ensurePage(_viewModel.selectedIndex);
+  }
+
+  void _animateToSelectedPage() {
+    if (!_pageController.hasClients) return;
+
+    _pageController.animateToPage(
+      _viewModel.selectedIndex,
+      duration: const Duration(milliseconds: 260),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  void _jumpToSelectedPage() {
+    if (!_pageController.hasClients) return;
+
+    _pageController.jumpToPage(_viewModel.selectedIndex);
   }
 
   void _ensurePage(int index) {
@@ -129,12 +158,14 @@ class _MainTabScaffoldState extends State<MainTabScaffold> {
       builder: (context, _) {
         return Scaffold(
           backgroundColor: Colors.white,
-          body: IndexedStack(
-            index: _viewModel.selectedIndex,
-            children: List.generate(
-              _pages.length,
-              (index) => _pages[index] ?? const SizedBox.shrink(),
-            ),
+          body: PageView.builder(
+            controller: _pageController,
+            itemCount: _pages.length,
+            onPageChanged: _handlePageChanged,
+            itemBuilder: (context, index) {
+              _ensurePage(index);
+              return _pages[index] ?? const SizedBox.shrink();
+            },
           ),
           bottomNavigationBar: DashboardBottomNavigation(
             items: _buildNavItems(),

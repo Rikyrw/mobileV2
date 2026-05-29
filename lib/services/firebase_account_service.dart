@@ -4,8 +4,9 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:mob_2/config/app_config.dart';
+import 'package:mob_2/services/app_session_service.dart';
 import 'package:mob_2/services/app_cache_service.dart';
 import 'package:mob_2/services/greenpoint_api_service.dart';
 
@@ -221,7 +222,9 @@ class FirebaseAccountService {
     return credential;
   }
 
-  static Future<void> sendPasswordResetForIdentifier(String identifier) async {
+  static Future<String> sendPasswordResetForIdentifier(
+    String identifier,
+  ) async {
     final normalizedIdentifier = identifier.trim();
     String? email;
 
@@ -231,7 +234,7 @@ class FirebaseAccountService {
       debugPrint('Password reset email lookup skipped: $e');
     }
 
-    await GreenPointApiService.sendPasswordReset(
+    return GreenPointApiService.sendPasswordReset(
       normalizedIdentifier,
       email: email,
     );
@@ -348,6 +351,7 @@ class FirebaseAccountService {
   }
 
   static Future<void> signOut() async {
+    await AppSessionService.clear();
     AppCacheService.invalidateAll();
 
     try {
@@ -371,6 +375,7 @@ class FirebaseAccountService {
   static Future<void> _clearCurrentSessionForAccountSwitch({
     bool disconnectGoogle = false,
   }) async {
+    await AppSessionService.clear();
     GreenPointApiService.clearAuthToken();
 
     try {
@@ -937,9 +942,9 @@ class FirebaseAccountService {
     bool useServerClientId = true,
   }) {
     const scopes = <String>['email', 'profile'];
-    final clientId = dotenv.env['GOOGLE_CLIENT_ID']?.trim();
+    final clientId = AppConfig.clean(AppConfig.googleClientId);
 
-    if (kIsWeb && (clientId == null || clientId.isEmpty)) {
+    if (kIsWeb && clientId.isEmpty) {
       if (requireWebClientId) {
         throw FirebaseAuthException(code: 'missing-google-client-id');
       }
@@ -950,7 +955,7 @@ class FirebaseAccountService {
       return GoogleSignIn(clientId: clientId, scopes: scopes);
     }
 
-    if (useServerClientId && clientId != null && clientId.isNotEmpty) {
+    if (useServerClientId && clientId.isNotEmpty) {
       return GoogleSignIn(scopes: scopes, serverClientId: clientId);
     }
 
@@ -1022,6 +1027,6 @@ class FirebaseAccountService {
 
   static const String _firebaseConfigMessage =
       'Firebase belum dikonfigurasi. Isi FIREBASE_API_KEY, FIREBASE_APP_ID, '
-      'FIREBASE_MESSAGING_SENDER_ID, dan FIREBASE_PROJECT_ID di file .env, '
-      'lalu restart aplikasi.';
+      'FIREBASE_MESSAGING_SENDER_ID, dan FIREBASE_PROJECT_ID lewat '
+      '--dart-define atau jalankan flutterfire configure.';
 }

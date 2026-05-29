@@ -128,6 +128,7 @@ class SetorSampahViewModel extends ChangeNotifier {
   bool _submitting = false;
   bool _validatingPhoto = false;
   String? _errorMessage;
+  bool _disposed = false;
 
   List<WasteItem> get wasteItems => List.unmodifiable(_wasteItems);
   List<Map<String, dynamic>> get wasteTypes => List.unmodifiable(_wasteTypes);
@@ -166,7 +167,7 @@ class SetorSampahViewModel extends ChangeNotifier {
 
     try {
       final firebaseUser = FirebaseAccountService.currentUser;
-      final email = emailArgument ?? firebaseUser?.email;
+      final email = emailArgument ?? firebaseUser?.email ?? _currentEmail;
       _currentEmail = email;
       _notify();
 
@@ -176,6 +177,7 @@ class SetorSampahViewModel extends ChangeNotifier {
         email,
         forceRefresh: true,
       );
+      if (_disposed) return;
 
       if (record == null) return;
 
@@ -208,12 +210,17 @@ class SetorSampahViewModel extends ChangeNotifier {
     }
   }
 
-  Future<void> loadWasteTypes() async {
+  Future<void> loadWasteTypes({bool forceRefresh = false}) async {
     if (_loadingWasteTypes) return;
     _setLoadingWasteTypes(true);
 
     try {
-      _wasteTypes = await AppCacheService.fetchWasteTypes();
+      final wasteTypes = await AppCacheService.fetchWasteTypes(
+        forceRefresh: forceRefresh,
+      );
+      if (_disposed) return;
+
+      _wasteTypes = wasteTypes;
       _notify();
     } catch (e) {
       debugPrint('Error loading waste types: $e');
@@ -224,8 +231,17 @@ class SetorSampahViewModel extends ChangeNotifier {
     }
   }
 
+  Future<void> refreshData({String? emailArgument}) {
+    return Future.wait([
+      loadUserProfile(emailArgument: emailArgument),
+      loadWasteTypes(forceRefresh: true),
+    ]);
+  }
+
   void clearError() {
+    if (_errorMessage == null) return;
     _errorMessage = null;
+    _notify();
   }
 
   void toggleWasteItem(WasteItem item, bool selected) {
@@ -313,6 +329,7 @@ class SetorSampahViewModel extends ChangeNotifier {
     }
 
     if (picked == null) return const SetorPhotoResult.empty();
+    if (_disposed) return const SetorPhotoResult.empty();
 
     return _validateAndAddImage(item, picked);
   }
@@ -321,19 +338,15 @@ class SetorSampahViewModel extends ChangeNotifier {
     WasteItem item,
     XFile picked,
   ) async {
-    final allowedWasteNames = _wasteTypes
-        .map((wasteType) => wasteType['name']?.toString().trim() ?? '')
-        .where((name) => name.isNotEmpty)
-        .toList();
-
     _setValidatingPhoto(true);
 
     try {
       final validation = await _photoValidator.validateWastePhoto(
         image: picked,
+        selectedWasteId: item.jenisId,
         selectedWasteName: item.name,
-        allowedWasteNames: allowedWasteNames,
       );
+      if (_disposed) return const SetorPhotoResult.empty();
 
       if (!validation.isAccepted) {
         return SetorPhotoResult.warning(
@@ -417,6 +430,10 @@ class SetorSampahViewModel extends ChangeNotifier {
         nasabahId: nasabahId,
         items: setorItems,
       );
+      if (_disposed) {
+        return SetorSubmitResult.failure('');
+      }
+
       AppCacheService.invalidateActivity();
 
       final arguments = _currentEmail == null ? null : {'email': _currentEmail};
@@ -425,6 +442,8 @@ class SetorSampahViewModel extends ChangeNotifier {
         message: 'Setor sampah berhasil diajukan.',
         profileArguments: arguments,
       );
+    } on GreenPointApiException catch (e) {
+      return SetorSubmitResult.failure(e.message);
     } catch (e) {
       return SetorSubmitResult.failure('Gagal mengajukan setor sampah: $e');
     } finally {
@@ -498,11 +517,13 @@ class SetorSampahViewModel extends ChangeNotifier {
   }
 
   void _notify() {
+    if (_disposed) return;
     notifyListeners();
   }
 
   @override
   void dispose() {
+    _disposed = true;
     namaController.dispose();
     alamatController.dispose();
     for (final item in _wasteItems) {

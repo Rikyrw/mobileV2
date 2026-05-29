@@ -1,9 +1,9 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:http/http.dart' as http;
 
+import '../config/app_config.dart';
 import '../services/app_cache_service.dart';
 import '../services/firebase_account_service.dart';
 import '../services/greenpoint_api_service.dart';
@@ -70,6 +70,7 @@ class TopupSaldoViewModel extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
   List<TopupHistoryItem> get topupHistory => List.unmodifiable(_topupHistory);
   Object get profileArguments => {'email': _currentEmail};
+  String get userName => _fullName ?? 'Nasabah';
   String get saldoText => _saldo == null ? '-' : formatRupiah(_saldo ?? 0);
 
   Future<void> loadUserProfile({String? emailArgument}) async {
@@ -78,7 +79,7 @@ class TopupSaldoViewModel extends ChangeNotifier {
 
     try {
       final firebaseUser = FirebaseAccountService.currentUser;
-      final email = emailArgument ?? firebaseUser?.email;
+      final email = emailArgument ?? firebaseUser?.email ?? _currentEmail;
       _currentEmail = email;
       _notify();
 
@@ -106,6 +107,10 @@ class TopupSaldoViewModel extends ChangeNotifier {
     } finally {
       _setLoadingProfile(false);
     }
+  }
+
+  Future<void> refresh({String? emailArgument}) {
+    return loadUserProfile(emailArgument: emailArgument);
   }
 
   Future<void> loadTopupHistory() async {
@@ -297,8 +302,8 @@ class TopupSaldoViewModel extends ChangeNotifier {
 
   List<String> _resolveTopupUrls() {
     final urls = <String>[];
-    final value = dotenv.env['TOPUP_API_URL']?.trim();
-    if (value != null && value.isNotEmpty) {
+    final value = AppConfig.clean(AppConfig.topupApiUrl);
+    if (value.isNotEmpty) {
       final originFallback = _urlFromOrigin(value, _createTopupPath);
       if (originFallback != null) {
         urls.add(originFallback);
@@ -306,8 +311,8 @@ class TopupSaldoViewModel extends ChangeNotifier {
       urls.add(value);
     }
 
-    final apiBaseUrl = dotenv.env['GREENPOINT_API_BASE_URL']?.trim();
-    if (apiBaseUrl != null && apiBaseUrl.isNotEmpty) {
+    final apiBaseUrl = AppConfig.clean(AppConfig.greenPointApiBaseUrl);
+    if (apiBaseUrl.isNotEmpty) {
       urls.add(_joinUrl(apiBaseUrl, 'mobile/nasabah/topup'));
     }
 

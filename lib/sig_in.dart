@@ -34,11 +34,69 @@ class _SignInScreenState extends State<SignInScreen> {
     _handleAuthResult(result);
   }
 
-  Future<void> _sendPasswordReset() async {
+  Future<void> _sendPasswordReset(String identifier) async {
     FocusManager.instance.primaryFocus?.unfocus();
 
-    final result = await _viewModel.sendPasswordReset(_emailController.text);
+    final result = await _viewModel.sendPasswordReset(identifier);
     _handleMessageResult(result);
+  }
+
+  Future<void> _showPasswordResetDialog() async {
+    FocusManager.instance.primaryFocus?.unfocus();
+
+    final resetController = TextEditingController(
+      text: _emailController.text.trim(),
+    );
+
+    try {
+      final identifier = await showDialog<String>(
+        context: context,
+        builder: (dialogContext) {
+          return AlertDialog(
+            title: const Text('Reset Password'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Masukkan email atau username akun yang dibuat lewat form daftar. Akun Google tetap masuk lewat tombol Google.',
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: resetController,
+                  keyboardType: TextInputType.emailAddress,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Email atau username',
+                    border: OutlineInputBorder(),
+                  ),
+                  onSubmitted: (value) {
+                    Navigator.of(dialogContext).pop(value.trim());
+                  },
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(),
+                child: const Text('Batal'),
+              ),
+              ElevatedButton(
+                onPressed: () => Navigator.of(
+                  dialogContext,
+                ).pop(resetController.text.trim()),
+                child: const Text('Kirim Link'),
+              ),
+            ],
+          );
+        },
+      );
+
+      if (identifier == null) return;
+      await _sendPasswordReset(identifier);
+    } finally {
+      resetController.dispose();
+    }
   }
 
   @override
@@ -179,7 +237,7 @@ class _SignInScreenState extends State<SignInScreen> {
                             child: TextButton(
                               onPressed: _viewModel.resetLoading
                                   ? null
-                                  : _sendPasswordReset,
+                                  : _showPasswordResetDialog,
                               style: TextButton.styleFrom(
                                 foregroundColor: const Color(0xFF315A39),
                                 padding: EdgeInsets.zero,
@@ -367,8 +425,12 @@ class _SignInScreenState extends State<SignInScreen> {
   void _showMessage(String? message) {
     if (message == null || message.isEmpty) return;
 
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 5),
+      ),
+    );
   }
 }

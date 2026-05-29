@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:mob_2/config/app_config.dart';
 import 'package:mob_2/email_verification_notice.dart';
 import 'package:mob_2/emoney.dart';
 import 'package:mob_2/main_tab_scaffold.dart';
@@ -23,12 +23,6 @@ Future<void> main() async {
 }
 
 Future<void> _initializeAppServices() async {
-  try {
-    await dotenv.load(fileName: ".env");
-  } catch (e) {
-    debugPrint('Env load skipped: $e');
-  }
-
   await _initializeFirebase();
 }
 
@@ -43,10 +37,10 @@ Future<bool> _initializeFirebase() async {
       }
     }
 
-    final options = _firebaseOptionsFromEnv();
+    final options = _firebaseOptionsFromConfig();
     if (options == null) {
       debugPrint(
-        'Firebase config belum lengkap. Isi FIREBASE_* di .env atau jalankan flutterfire configure.',
+        'Firebase config belum lengkap. Isi FIREBASE_* lewat --dart-define atau jalankan flutterfire configure.',
       );
       return false;
     }
@@ -59,19 +53,17 @@ Future<bool> _initializeFirebase() async {
   }
 }
 
-FirebaseOptions? _firebaseOptionsFromEnv() {
-  final apiKey = dotenv.env['FIREBASE_API_KEY']?.trim();
-  final appId = dotenv.env['FIREBASE_APP_ID']?.trim();
-  final messagingSenderId = dotenv.env['FIREBASE_MESSAGING_SENDER_ID']?.trim();
-  final projectId = dotenv.env['FIREBASE_PROJECT_ID']?.trim();
+FirebaseOptions? _firebaseOptionsFromConfig() {
+  final apiKey = AppConfig.clean(AppConfig.firebaseApiKey);
+  final appId = AppConfig.clean(AppConfig.firebaseAppId);
+  final messagingSenderId = AppConfig.clean(
+    AppConfig.firebaseMessagingSenderId,
+  );
+  final projectId = AppConfig.clean(AppConfig.firebaseProjectId);
 
-  if (apiKey == null ||
-      apiKey.isEmpty ||
-      appId == null ||
+  if (apiKey.isEmpty ||
       appId.isEmpty ||
-      messagingSenderId == null ||
       messagingSenderId.isEmpty ||
-      projectId == null ||
       projectId.isEmpty) {
     return null;
   }
@@ -81,10 +73,15 @@ FirebaseOptions? _firebaseOptionsFromEnv() {
     appId: appId,
     messagingSenderId: messagingSenderId,
     projectId: projectId,
-    authDomain: dotenv.env['FIREBASE_AUTH_DOMAIN']?.trim(),
-    storageBucket: dotenv.env['FIREBASE_STORAGE_BUCKET']?.trim(),
-    measurementId: dotenv.env['FIREBASE_MEASUREMENT_ID']?.trim(),
+    authDomain: _optionalConfig(AppConfig.firebaseAuthDomain),
+    storageBucket: _optionalConfig(AppConfig.firebaseStorageBucket),
+    measurementId: _optionalConfig(AppConfig.firebaseMeasurementId),
   );
+}
+
+String? _optionalConfig(String value) {
+  final cleanValue = AppConfig.clean(value);
+  return cleanValue.isEmpty ? null : cleanValue;
 }
 
 class MyApp extends StatelessWidget {

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import 'viewmodels/setor_sampah_view_model.dart';
+import 'widgets/greenpoint_header.dart';
 
 class SetorSampahScreen extends StatefulWidget {
   const SetorSampahScreen({super.key});
@@ -13,7 +14,17 @@ class SetorSampahScreen extends StatefulWidget {
   State<SetorSampahScreen> createState() => _SetorSampahScreenState();
 }
 
+class _WasteTypeSelection {
+  const _WasteTypeSelection(this.jenisId, this.name, this.price);
+
+  final int jenisId;
+  final String name;
+  final double price;
+}
+
 class _SetorSampahScreenState extends State<SetorSampahScreen> {
+  static const _routeSettleDuration = Duration(milliseconds: 220);
+
   final SetorSampahViewModel _viewModel = SetorSampahViewModel();
   bool _profileLoadRequested = false;
 
@@ -46,6 +57,23 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
     return null;
   }
 
+  Future<void> _refreshData() {
+    return _viewModel.refreshData(emailArgument: _routeEmailArgument);
+  }
+
+  void _returnToProfile() {
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) {
+      navigator.pop();
+      return;
+    }
+
+    navigator.pushReplacementNamed(
+      '/profil',
+      arguments: _viewModel.profileArguments,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
@@ -62,90 +90,55 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
 
         return Scaffold(
           backgroundColor: Colors.white,
-          body: SafeArea(
+          body: RefreshIndicator(
+            color: const Color(0xFF315A39),
+            backgroundColor: Colors.white,
+            onRefresh: _refreshData,
             child: SingleChildScrollView(
-              child: Container(
-                width: double.infinity,
-                color: Colors.white,
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    children: [
-                      _header(),
-                      const SizedBox(height: 16),
-                      _saldoCard(),
-                      const SizedBox(height: 24),
-                      _sectionTitle('Data Pengirim'),
-                      const SizedBox(height: 8),
-                      _senderCard(),
-                      const SizedBox(height: 24),
-                      _sectionTitle('Jenis Sampah'),
-                      const SizedBox(height: 24),
-                      _addWasteButton(),
-                      const SizedBox(height: 16),
-                      if (_viewModel.wasteItems.isNotEmpty) _wasteList(),
-                      const SizedBox(height: 12),
-                      _totalCard(),
-                      const SizedBox(height: 24),
-                      _calculateButton(),
-                      const SizedBox(height: 12),
-                      if (_viewModel.showAjukanButton) _submitButton(),
-                    ],
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  GreenPointHeader(
+                    title: 'Setor Sampah',
+                    subtitle: _viewModel.userName,
+                    avatarText: _viewModel.userName,
+                    avatarSize: 58,
+                    leading: GreenPointHeaderIconButton(
+                      icon: Icons.arrow_back_rounded,
+                      tooltip: 'Kembali',
+                      onPressed: _returnToProfile,
+                    ),
                   ),
-                ),
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      children: [
+                        const SizedBox(height: 8),
+                        _saldoCard(),
+                        const SizedBox(height: 24),
+                        _sectionTitle('Data Pengirim'),
+                        const SizedBox(height: 8),
+                        _senderCard(),
+                        const SizedBox(height: 24),
+                        _sectionTitle('Jenis Sampah'),
+                        const SizedBox(height: 24),
+                        _addWasteButton(),
+                        const SizedBox(height: 16),
+                        if (_viewModel.wasteItems.isNotEmpty) _wasteList(),
+                        const SizedBox(height: 12),
+                        _totalCard(),
+                        const SizedBox(height: 24),
+                        if (_viewModel.showAjukanButton) _submitButton(),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
         );
       },
-    );
-  }
-
-  Widget _header() {
-    return SizedBox(
-      width: double.infinity,
-      child: Stack(
-        alignment: Alignment.center,
-        children: [
-          Align(
-            alignment: Alignment.centerLeft,
-            child: IconButton(
-              onPressed: () {
-                Navigator.of(context).pushReplacementNamed(
-                  '/profil',
-                  arguments: _viewModel.profileArguments,
-                );
-              },
-              icon: const Icon(Icons.arrow_back),
-              iconSize: 24,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
-              color: const Color(0xFF333333),
-            ),
-          ),
-          const Text(
-            'Setor Sampah',
-            style: TextStyle(
-              color: Color(0xFF333333),
-              fontSize: 20,
-              fontFamily: 'Roboto',
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          Align(
-            alignment: Alignment.centerRight,
-            child: Text(
-              _viewModel.userName,
-              style: const TextStyle(
-                color: Color(0xFF315A39),
-                fontSize: 16,
-                fontFamily: 'Roboto',
-                fontWeight: FontWeight.w400,
-              ),
-            ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -497,30 +490,6 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
     );
   }
 
-  Widget _calculateButton() {
-    return SizedBox(
-      width: double.infinity,
-      height: 48,
-      child: ElevatedButton(
-        onPressed: _viewModel.refreshTotals,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF315A39),
-          elevation: 0,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(0)),
-        ),
-        child: const Text(
-          'Hitung Total',
-          style: TextStyle(
-            color: Colors.white,
-            fontSize: 16,
-            fontFamily: 'Roboto',
-            fontWeight: FontWeight.w400,
-          ),
-        ),
-      ),
-    );
-  }
-
   Widget _submitButton() {
     return SizedBox(
       width: double.infinity,
@@ -563,14 +532,21 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
     }
 
     if (result.success) {
-      Navigator.of(
-        context,
-      ).pushReplacementNamed('/profil', arguments: result.profileArguments);
+      final navigator = Navigator.of(context);
+      if (navigator.canPop()) {
+        navigator.pop(true);
+        return;
+      }
+
+      navigator.pushReplacementNamed(
+        '/profil',
+        arguments: result.profileArguments,
+      );
     }
   }
 
-  void _showAddWasteDialog() {
-    showModalBottomSheet(
+  Future<void> _showAddWasteDialog() async {
+    final selection = await showModalBottomSheet<_WasteTypeSelection>(
       context: context,
       isScrollControlled: true,
       builder: (context) {
@@ -597,11 +573,12 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
                                 ),
                               ),
                               onTap: () {
-                                Navigator.of(context).pop();
-                                _showWeightDialogForPreset(
-                                  _asInt(item['id']),
-                                  name,
-                                  price,
+                                Navigator.of(context).pop(
+                                  _WasteTypeSelection(
+                                    _asInt(item['id']),
+                                    name,
+                                    price,
+                                  ),
                                 );
                               },
                             );
@@ -614,6 +591,17 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
         );
       },
     );
+
+    if (!mounted || selection == null) return;
+
+    await Future<void>.delayed(_routeSettleDuration);
+    if (!mounted) return;
+
+    await _showWeightDialogForPreset(
+      selection.jenisId,
+      selection.name,
+      selection.price,
+    );
   }
 
   Future<void> _showWeightDialogForPreset(
@@ -622,55 +610,79 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
     double price,
   ) async {
     final weightController = TextEditingController();
-    await showDialog<void>(
+    final rawWeight = await showDialog<String>(
       context: context,
       builder: (context) {
-        return AlertDialog(
-          title: Text('Berat untuk $name'),
-          content: TextField(
-            controller: weightController,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(
-              hintText: 'Masukkan berat (kg), contoh: 1.5',
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('Batal'),
-            ),
-            ElevatedButton(
-              onPressed: () {
-                final result = _viewModel.addOrUpdateWaste(
-                  jenisId: jenisId,
-                  name: name,
-                  price: price,
-                  rawWeight: weightController.text,
-                );
+        String? errorText;
 
-                if (!result.success) {
-                  _showSnack(result.message);
-                  return;
-                }
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Text('Berat untuk $name'),
+              content: TextField(
+                controller: weightController,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: InputDecoration(
+                  hintText: 'Masukkan berat (kg), contoh: 1.5',
+                  errorText: errorText,
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('Batal'),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    final normalized = weightController.text
+                        .replaceAll(',', '.')
+                        .trim();
+                    final weight = double.tryParse(normalized) ?? 0.0;
 
-                Navigator.of(context).pop();
-              },
-              child: const Text('Tambah'),
-            ),
-          ],
+                    if (weight < 1) {
+                      setDialogState(() {
+                        errorText = 'Minimal 1 kg';
+                      });
+                      return;
+                    }
+
+                    Navigator.of(context).pop(weightController.text);
+                  },
+                  child: const Text('Tambah'),
+                ),
+              ],
+            );
+          },
         );
       },
     );
+
+    await Future<void>.delayed(_routeSettleDuration);
     weightController.dispose();
+
+    if (!mounted || rawWeight == null) return;
+
+    final result = _viewModel.addOrUpdateWaste(
+      jenisId: jenisId,
+      name: name,
+      price: price,
+      rawWeight: rawWeight,
+    );
+
+    if (!result.success) {
+      _showSnack(result.message);
+    }
   }
 
-  void _showImageSourceOptions(WasteItem item) {
+  Future<void> _showImageSourceOptions(WasteItem item) async {
     if (_viewModel.validatingPhoto) {
       _showSnack('Tunggu sampai pemeriksaan foto selesai.');
       return;
     }
 
-    showModalBottomSheet(
+    final source = await showModalBottomSheet<ImageSource>(
       context: context,
       builder: (context) {
         return SafeArea(
@@ -681,16 +693,14 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
                 leading: const Icon(Icons.photo_library),
                 title: const Text('Pilih dari Galeri'),
                 onTap: () {
-                  Navigator.of(context).pop();
-                  _pickImage(item, ImageSource.gallery);
+                  Navigator.of(context).pop(ImageSource.gallery);
                 },
               ),
               ListTile(
                 leading: const Icon(Icons.camera_alt),
                 title: const Text('Ambil Foto'),
                 onTap: () {
-                  Navigator.of(context).pop();
-                  _pickImage(item, ImageSource.camera);
+                  Navigator.of(context).pop(ImageSource.camera);
                 },
               ),
             ],
@@ -698,6 +708,11 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
         );
       },
     );
+
+    if (!mounted || source == null) return;
+    if (!_viewModel.wasteItems.contains(item)) return;
+
+    await _pickImage(item, source);
   }
 
   Future<void> _pickImage(WasteItem item, ImageSource source) async {
@@ -758,8 +773,11 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
                 backgroundColor: const Color(0xFF315A39),
               ),
               onPressed: () {
-                _viewModel.removeImage(item, image);
                 Navigator.of(context).pop();
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (!mounted) return;
+                  _viewModel.removeImage(item, image);
+                });
               },
               child: const Text('Hapus'),
             ),
@@ -786,8 +804,11 @@ class _SetorSampahScreenState extends State<SetorSampahScreen> {
                 backgroundColor: const Color(0xFF315A39),
               ),
               onPressed: () {
-                _viewModel.removeWasteItem(item);
                 Navigator.of(context).pop();
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (!mounted) return;
+                  _viewModel.removeWasteItem(item);
+                });
               },
               child: const Text('Hapus'),
             ),

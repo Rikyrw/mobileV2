@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'perbarui_profil.dart';
 import 'viewmodels/profile_view_model.dart';
+import 'widgets/greenpoint_header.dart';
 
 class ProfilScreen extends StatefulWidget {
   const ProfilScreen({super.key});
@@ -41,6 +42,10 @@ class _ProfilScreenState extends State<ProfilScreen> {
     );
   }
 
+  Future<void> _refreshProfile() {
+    return _loadProfile(forceRefresh: true);
+  }
+
   String? get _routeEmailArgument {
     final args = ModalRoute.of(context)?.settings.arguments;
     if (args is Map && args['email'] is String) {
@@ -59,312 +64,286 @@ class _ProfilScreenState extends State<ProfilScreen> {
 
         return ColoredBox(
           color: Colors.white,
-          child: SingleChildScrollView(
-            child: Container(
-              width: double.infinity,
-              color: Colors.white,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Container(
-                    padding: const EdgeInsetsDirectional.fromSTEB(
-                      20,
-                      40,
-                      20,
-                      30,
+          child: RefreshIndicator(
+            color: const Color(0xFF315A39),
+            backgroundColor: Colors.white,
+            onRefresh: _refreshProfile,
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: Container(
+                width: double.infinity,
+                color: Colors.white,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    GreenPointHeader(
+                      eyebrow: dummyData.greeting,
+                      title: viewModel.userName,
+                      subtitle: 'Kelola akun Green Point',
+                      avatarText: viewModel.userName,
+                      trailing: GreenPointHeaderIconButton(
+                        icon: Icons.logout_rounded,
+                        tooltip: 'Keluar',
+                        onPressed: () async {
+                          final navigator = Navigator.of(context);
+                          final shouldLogout = await showDialog<bool>(
+                            context: context,
+                            builder: (context) => AlertDialog(
+                              title: const Text('Konfirmasi'),
+                              content: const Text(
+                                'Apakah Anda yakin ingin keluar?',
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () =>
+                                      Navigator.of(context).pop(false),
+                                  child: const Text('Batal'),
+                                ),
+                                TextButton(
+                                  onPressed: () =>
+                                      Navigator.of(context).pop(true),
+                                  child: const Text('Keluar'),
+                                ),
+                              ],
+                            ),
+                          );
+
+                          if (shouldLogout == true) {
+                            await _viewModel.signOut();
+                            if (!mounted) return;
+                            navigator.pushNamedAndRemoveUntil(
+                              '/welcome',
+                              (route) => false,
+                            );
+                          }
+                        },
+                      ),
                     ),
-                    decoration: const BoxDecoration(color: Color(0xFF315A39)),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Opacity(
-                                opacity: 0.8,
-                                child: Text(
-                                  dummyData.greeting,
+                    Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            dummyData.title,
+                            style: const TextStyle(
+                              color: Color(0xFF333333),
+                              fontSize: 20,
+                              fontFamily: 'Roboto',
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            dummyData.subtitle,
+                            style: const TextStyle(
+                              color: Color(0xFF666666),
+                              fontSize: 14,
+                              fontFamily: 'Roboto',
+                              fontWeight: FontWeight.w400,
+                            ),
+                          ),
+                          const SizedBox(height: 30),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(20),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF6F7F8),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  viewModel.fullName,
                                   style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 16,
+                                    color: Color(0xFF333333),
+                                    fontSize: 18,
+                                    fontFamily: 'Roboto',
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  viewModel.username,
+                                  style: const TextStyle(
+                                    color: Color(0xFF666666),
+                                    fontSize: 14,
                                     fontFamily: 'Roboto',
                                     fontWeight: FontWeight.w400,
                                   ),
                                 ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                viewModel.userName,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 24,
-                                  fontFamily: 'Roboto',
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.logout, color: Colors.white),
-                          tooltip: 'Keluar',
-                          onPressed: () async {
-                            final navigator = Navigator.of(context);
-                            final shouldLogout = await showDialog<bool>(
-                              context: context,
-                              builder: (context) => AlertDialog(
-                                title: const Text('Konfirmasi'),
-                                content: const Text(
-                                  'Apakah Anda yakin ingin keluar?',
-                                ),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () =>
-                                        Navigator.of(context).pop(false),
-                                    child: const Text('Batal'),
-                                  ),
-                                  TextButton(
-                                    onPressed: () =>
-                                        Navigator.of(context).pop(true),
-                                    child: const Text('Keluar'),
-                                  ),
-                                ],
-                              ),
-                            );
-
-                            if (shouldLogout == true) {
-                              await _viewModel.signOut();
-                              if (!mounted) return;
-                              navigator.pushNamedAndRemoveUntil(
-                                '/welcome',
-                                (route) => false,
-                              );
-                            }
-                          },
-                        ),
-                      ],
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          dummyData.title,
-                          style: const TextStyle(
-                            color: Color(0xFF333333),
-                            fontSize: 20,
-                            fontFamily: 'Roboto',
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          dummyData.subtitle,
-                          style: const TextStyle(
-                            color: Color(0xFF666666),
-                            fontSize: 14,
-                            fontFamily: 'Roboto',
-                            fontWeight: FontWeight.w400,
-                          ),
-                        ),
-                        const SizedBox(height: 30),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(20),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF6F7F8),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                viewModel.fullName,
-                                style: const TextStyle(
-                                  color: Color(0xFF333333),
-                                  fontSize: 18,
-                                  fontFamily: 'Roboto',
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                viewModel.username,
-                                style: const TextStyle(
-                                  color: Color(0xFF666666),
-                                  fontSize: 14,
-                                  fontFamily: 'Roboto',
-                                  fontWeight: FontWeight.w400,
-                                ),
-                              ),
-                              const SizedBox(height: 20),
-                              Row(
-                                children: [
-                                  const Expanded(
-                                    child: Text(
-                                      'Saldo',
-                                      style: TextStyle(
-                                        color: Color(0xFF666666),
-                                        fontSize: 14,
-                                        fontFamily: 'Roboto',
-                                        fontWeight: FontWeight.w400,
-                                      ),
-                                    ),
-                                  ),
-                                  Text(
-                                    viewModel.saldo,
-                                    style: const TextStyle(
-                                      color: Color(0xFF315A39),
-                                      fontSize: 16,
-                                      fontFamily: 'Roboto',
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 20),
-                              const Text(
-                                'Alamat',
-                                style: TextStyle(
-                                  color: Color(0xFF333333),
-                                  fontSize: 14,
-                                  fontFamily: 'Roboto',
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Text(
-                                viewModel.address,
-                                style: const TextStyle(
-                                  color: Color(0xFF666666),
-                                  fontSize: 12,
-                                  fontFamily: 'Roboto',
-                                  fontWeight: FontWeight.w400,
-                                  height: 1.35,
-                                ),
-                              ),
-                              const SizedBox(height: 16),
-                              Row(
-                                children: [
-                                  const Expanded(
-                                    flex: 2,
-                                    child: Text(
-                                      'Email',
-                                      style: TextStyle(
-                                        color: Color(0xFF666666),
-                                        fontSize: 14,
-                                        fontFamily: 'Roboto',
-                                        fontWeight: FontWeight.w400,
-                                      ),
-                                    ),
-                                  ),
-                                  Expanded(
-                                    flex: 3,
-                                    child: Text(
-                                      viewModel.email,
-                                      textAlign: TextAlign.end,
-                                      style: const TextStyle(
-                                        color: Color(0xFF333333),
-                                        fontSize: 14,
-                                        fontFamily: 'Roboto',
-                                        fontWeight: FontWeight.w400,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 12),
-                              Row(
-                                children: [
-                                  const Expanded(
-                                    flex: 2,
-                                    child: Text(
-                                      'No HP',
-                                      style: TextStyle(
-                                        color: Color(0xFF666666),
-                                        fontSize: 14,
-                                        fontFamily: 'Roboto',
-                                        fontWeight: FontWeight.w400,
-                                      ),
-                                    ),
-                                  ),
-                                  Expanded(
-                                    flex: 3,
-                                    child: Text(
-                                      viewModel.phone,
-                                      textAlign: TextAlign.end,
-                                      style: const TextStyle(
-                                        color: Color(0xFF333333),
-                                        fontSize: 14,
-                                        fontFamily: 'Roboto',
-                                        fontWeight: FontWeight.w400,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 18),
-                              _profileActionButton(
-                                icon: Icons.edit_outlined,
-                                title: 'Perbarui Profil',
-                                subtitle: 'Ubah data diri dan kontak',
-                                accentColor: const Color(0xFF315A39),
-                                onTap: () {
-                                  Navigator.of(context)
-                                      .push(
-                                        MaterialPageRoute(
-                                          builder: (context) =>
-                                              PerbaruiProfilScreen(
-                                                userData:
-                                                    viewModel.editableUserData,
-                                              ),
+                                const SizedBox(height: 20),
+                                Row(
+                                  children: [
+                                    const Expanded(
+                                      child: Text(
+                                        'Saldo',
+                                        style: TextStyle(
+                                          color: Color(0xFF666666),
+                                          fontSize: 14,
+                                          fontFamily: 'Roboto',
+                                          fontWeight: FontWeight.w400,
                                         ),
-                                      )
-                                      .then((result) {
-                                        if (result == true) {
-                                          _loadProfile(forceRefresh: true);
-                                        }
-                                      });
-                                },
-                              ),
-                              const SizedBox(height: 12),
-                              _profileActionButton(
-                                icon: Icons.recycling,
-                                title: 'Setor Sampah',
-                                subtitle: 'Ajukan setoran baru',
-                                accentColor: const Color(0xFF315A39),
-                                isPrimary: true,
-                                onTap: () {
-                                  Navigator.of(context).pushReplacementNamed(
-                                    '/setor-sampah',
-                                    arguments: viewModel.routeArguments,
-                                  );
-                                },
-                              ),
-                              const SizedBox(height: 12),
-                              _profileActionButton(
-                                icon: Icons.account_balance_wallet_outlined,
-                                title: 'Top Up Saldo',
-                                subtitle: 'Isi saldo untuk transaksi',
-                                accentColor: const Color(0xFFB26A00),
-                                onTap: () {
-                                  Navigator.of(context).pushNamed(
-                                    '/topup-saldo',
-                                    arguments: viewModel.routeArguments,
-                                  );
-                                },
-                              ),
-                            ],
+                                      ),
+                                    ),
+                                    Text(
+                                      viewModel.saldo,
+                                      style: const TextStyle(
+                                        color: Color(0xFF315A39),
+                                        fontSize: 16,
+                                        fontFamily: 'Roboto',
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 20),
+                                const Text(
+                                  'Alamat',
+                                  style: TextStyle(
+                                    color: Color(0xFF333333),
+                                    fontSize: 14,
+                                    fontFamily: 'Roboto',
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  viewModel.address,
+                                  style: const TextStyle(
+                                    color: Color(0xFF666666),
+                                    fontSize: 12,
+                                    fontFamily: 'Roboto',
+                                    fontWeight: FontWeight.w400,
+                                    height: 1.35,
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                Row(
+                                  children: [
+                                    const Expanded(
+                                      flex: 2,
+                                      child: Text(
+                                        'Email',
+                                        style: TextStyle(
+                                          color: Color(0xFF666666),
+                                          fontSize: 14,
+                                          fontFamily: 'Roboto',
+                                          fontWeight: FontWeight.w400,
+                                        ),
+                                      ),
+                                    ),
+                                    Expanded(
+                                      flex: 3,
+                                      child: Text(
+                                        viewModel.email,
+                                        textAlign: TextAlign.end,
+                                        style: const TextStyle(
+                                          color: Color(0xFF333333),
+                                          fontSize: 14,
+                                          fontFamily: 'Roboto',
+                                          fontWeight: FontWeight.w400,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 12),
+                                Row(
+                                  children: [
+                                    const Expanded(
+                                      flex: 2,
+                                      child: Text(
+                                        'No HP',
+                                        style: TextStyle(
+                                          color: Color(0xFF666666),
+                                          fontSize: 14,
+                                          fontFamily: 'Roboto',
+                                          fontWeight: FontWeight.w400,
+                                        ),
+                                      ),
+                                    ),
+                                    Expanded(
+                                      flex: 3,
+                                      child: Text(
+                                        viewModel.phone,
+                                        textAlign: TextAlign.end,
+                                        style: const TextStyle(
+                                          color: Color(0xFF333333),
+                                          fontSize: 14,
+                                          fontFamily: 'Roboto',
+                                          fontWeight: FontWeight.w400,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 18),
+                                _profileActionButton(
+                                  icon: Icons.edit_outlined,
+                                  title: 'Perbarui Profil',
+                                  subtitle: 'Ubah data diri dan kontak',
+                                  accentColor: const Color(0xFF315A39),
+                                  onTap: () {
+                                    Navigator.of(context)
+                                        .push(
+                                          MaterialPageRoute(
+                                            builder: (context) =>
+                                                PerbaruiProfilScreen(
+                                                  userData: viewModel
+                                                      .editableUserData,
+                                                ),
+                                          ),
+                                        )
+                                        .then((result) {
+                                          if (result == true) {
+                                            _loadProfile(forceRefresh: true);
+                                          }
+                                        });
+                                  },
+                                ),
+                                const SizedBox(height: 85),
+                                _profileActionButton(
+                                  icon: Icons.recycling,
+                                  title: 'Setor Sampah',
+                                  subtitle: 'Ajukan setoran baru',
+                                  accentColor: const Color(0xFF315A39),
+                                  isPrimary: true,
+                                  onTap: () async {
+                                    final result = await Navigator.of(context)
+                                        .pushNamed(
+                                          '/setor-sampah',
+                                          arguments: viewModel.routeArguments,
+                                        );
+                                    if (!mounted) return;
+                                    if (result == true) {
+                                      _loadProfile(forceRefresh: true);
+                                    }
+                                  },
+                                ),
+                                const SizedBox(height: 12),
+                                _profileActionButton(
+                                  icon: Icons.account_balance_wallet_outlined,
+                                  title: 'Top Up Saldo',
+                                  subtitle: 'Isi saldo untuk transaksi',
+                                  accentColor: const Color(0xFFB26A00),
+                                  onTap: () {
+                                    Navigator.of(context).pushNamed(
+                                      '/topup-saldo',
+                                      arguments: viewModel.routeArguments,
+                                    );
+                                  },
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 80),
-                      ],
+                          const SizedBox(height: 80),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),

@@ -18,13 +18,16 @@ class _SplashScreenState extends State<SplashScreen> {
   void initState() {
     super.initState();
     _viewModel = SplashViewModel(initialization: widget.initialization);
-    _openWelcomeWhenReady();
+    _openInitialRouteWhenReady();
   }
 
-  Future<void> _openWelcomeWhenReady() async {
-    await _viewModel.waitUntilReady();
+  Future<void> _openInitialRouteWhenReady() async {
+    final destination = await _viewModel.resolveDestination();
     if (!mounted) return;
-    Navigator.of(context).pushReplacementNamed('/welcome');
+    Navigator.of(context).pushReplacementNamed(
+      destination.routeName,
+      arguments: destination.arguments,
+    );
   }
 
   @override

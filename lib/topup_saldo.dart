@@ -5,6 +5,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'services/external_url_opener.dart';
 import 'viewmodels/topup_saldo_view_model.dart';
 import 'viewmodels/topup_web_view_model.dart';
+import 'widgets/greenpoint_header.dart';
 
 class TopupSaldoScreen extends StatefulWidget {
   const TopupSaldoScreen({super.key});
@@ -40,6 +41,10 @@ class _TopupSaldoScreenState extends State<TopupSaldoScreen> {
       return args['email'] as String;
     }
     return null;
+  }
+
+  Future<void> _refreshTopup() {
+    return _viewModel.refresh(emailArgument: _routeEmailArgument);
   }
 
   Future<void> _pickTopupHistoryDate() async {
@@ -98,6 +103,19 @@ class _TopupSaldoScreenState extends State<TopupSaldoScreen> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
+  void _returnToProfile() {
+    final navigator = Navigator.of(context);
+    if (navigator.canPop()) {
+      navigator.pop();
+      return;
+    }
+
+    navigator.pushReplacementNamed(
+      '/profil',
+      arguments: _viewModel.profileArguments,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
@@ -114,155 +132,141 @@ class _TopupSaldoScreenState extends State<TopupSaldoScreen> {
 
         return Scaffold(
           backgroundColor: Colors.white,
-          body: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Container(
-                  padding: const EdgeInsetsDirectional.fromSTEB(20, 40, 20, 24),
-                  decoration: const BoxDecoration(color: Color(0xFF315A39)),
-                  child: Row(
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.arrow_back, color: Colors.white),
-                        onPressed: () {
-                          Navigator.of(context).pushReplacementNamed(
-                            '/profil',
-                            arguments: _viewModel.profileArguments,
-                          );
-                        },
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                      ),
-                      const SizedBox(width: 12),
-                      const Expanded(
-                        child: Text(
-                          'Top Up Saldo',
+          body: RefreshIndicator(
+            color: const Color(0xFF315A39),
+            backgroundColor: Colors.white,
+            onRefresh: _refreshTopup,
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  GreenPointHeader(
+                    title: 'Top Up Saldo',
+                    subtitle: 'Saldo saat ini ${_viewModel.saldoText}',
+                    avatarText: _viewModel.userName,
+                    avatarSize: 58,
+                    leading: GreenPointHeaderIconButton(
+                      icon: Icons.arrow_back_rounded,
+                      tooltip: 'Kembali',
+                      onPressed: _returnToProfile,
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF4F8F4),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Saldo Saat Ini',
+                                style: TextStyle(
+                                  color: Color(0xFF315A39),
+                                  fontSize: 12,
+                                  fontFamily: 'Roboto',
+                                  fontWeight: FontWeight.w400,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              Text(
+                                _viewModel.saldoText,
+                                style: const TextStyle(
+                                  color: Color(0xFF315A39),
+                                  fontSize: 20,
+                                  fontFamily: 'Roboto',
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        const Text(
+                          'Nominal Top Up',
                           style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 18,
+                            color: Color(0xFF333333),
+                            fontSize: 14,
                             fontFamily: 'Roboto',
                             fontWeight: FontWeight.w700,
                           ),
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF4F8F4),
-                          borderRadius: BorderRadius.circular(12),
+                        const SizedBox(height: 8),
+                        TextField(
+                          controller: _nominalController,
+                          keyboardType: TextInputType.number,
+                          decoration: InputDecoration(
+                            hintText: 'Masukkan nominal (min 10.000)',
+                            filled: true,
+                            fillColor: const Color(0xFFF6F7F8),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                              borderSide: BorderSide.none,
+                            ),
+                          ),
                         ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                        const SizedBox(height: 16),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
                           children: [
-                            const Text(
-                              'Saldo Saat Ini',
-                              style: TextStyle(
-                                color: Color(0xFF315A39),
-                                fontSize: 12,
-                                fontFamily: 'Roboto',
-                                fontWeight: FontWeight.w400,
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              _viewModel.saldoText,
-                              style: const TextStyle(
-                                color: Color(0xFF315A39),
-                                fontSize: 20,
-                                fontFamily: 'Roboto',
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
+                            _quickAmountChip(10000),
+                            _quickAmountChip(25000),
+                            _quickAmountChip(50000),
+                            _quickAmountChip(100000),
+                            _quickAmountChip(200000),
                           ],
                         ),
-                      ),
-                      const SizedBox(height: 20),
-                      const Text(
-                        'Nominal Top Up',
-                        style: TextStyle(
-                          color: Color(0xFF333333),
-                          fontSize: 14,
-                          fontFamily: 'Roboto',
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      TextField(
-                        controller: _nominalController,
-                        keyboardType: TextInputType.number,
-                        decoration: InputDecoration(
-                          hintText: 'Masukkan nominal (min 10.000)',
-                          filled: true,
-                          fillColor: const Color(0xFFF6F7F8),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            borderSide: BorderSide.none,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          _quickAmountChip(10000),
-                          _quickAmountChip(25000),
-                          _quickAmountChip(50000),
-                          _quickAmountChip(100000),
-                          _quickAmountChip(200000),
-                        ],
-                      ),
-                      const SizedBox(height: 24),
-                      SizedBox(
-                        width: double.infinity,
-                        height: 48,
-                        child: ElevatedButton(
-                          onPressed: _viewModel.submitting
-                              ? null
-                              : _submitTopup,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF315A39),
-                            foregroundColor: Colors.white,
-                            elevation: 0,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
+                        const SizedBox(height: 24),
+                        SizedBox(
+                          width: double.infinity,
+                          height: 48,
+                          child: ElevatedButton(
+                            onPressed: _viewModel.submitting
+                                ? null
+                                : _submitTopup,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF315A39),
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
                             ),
+                            child: _viewModel.submitting
+                                ? const SizedBox(
+                                    width: 22,
+                                    height: 22,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : const Text(
+                                    'Lanjutkan Pembayaran',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      fontFamily: 'Roboto',
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
                           ),
-                          child: _viewModel.submitting
-                              ? const SizedBox(
-                                  width: 22,
-                                  height: 22,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                    color: Colors.white,
-                                  ),
-                                )
-                              : const Text(
-                                  'Lanjutkan Pembayaran',
-                                  style: TextStyle(
-                                    fontSize: 14,
-                                    fontFamily: 'Roboto',
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
                         ),
-                      ),
-                      const SizedBox(height: 24),
-                      _topupHistorySection(),
-                    ],
+                        const SizedBox(height: 24),
+                        _topupHistorySection(),
+                      ],
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         );

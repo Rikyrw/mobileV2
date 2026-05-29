@@ -43,18 +43,24 @@ class PpobFormViewModel extends ChangeNotifier {
 
   String get fallbackUserName => 'Haidar Rais';
 
-  Future<void> loadProfile({String? emailArgument}) async {
+  Future<void> loadProfile({
+    String? emailArgument,
+    bool forceRefresh = false,
+  }) async {
     if (_loadingProfile) return;
     _setLoadingProfile(true);
 
     try {
       final firebaseUser = FirebaseAccountService.currentUser;
-      final email = emailArgument ?? firebaseUser?.email;
+      final email = emailArgument ?? firebaseUser?.email ?? _currentEmail;
       _currentEmail = email;
       _notify();
 
       if (email != null && email.isNotEmpty) {
-        final record = await AppCacheService.fetchNasabahByEmail(email);
+        final record = await AppCacheService.fetchNasabahByEmail(
+          email,
+          forceRefresh: forceRefresh,
+        );
 
         if (record != null) {
           _fetchedUserName =
@@ -70,6 +76,10 @@ class PpobFormViewModel extends ChangeNotifier {
     } finally {
       _setLoadingProfile(false);
     }
+  }
+
+  Future<void> refreshProfile({String? emailArgument}) {
+    return loadProfile(emailArgument: emailArgument, forceRefresh: true);
   }
 
   void setKategori(String? value) {

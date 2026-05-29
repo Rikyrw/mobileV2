@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'dashboard.dart';
 import 'viewmodels/transactions_view_model.dart';
+import 'widgets/greenpoint_header.dart';
 
 class TransaksiScreen extends StatefulWidget {
   const TransaksiScreen({super.key});
@@ -40,6 +41,10 @@ class _TransaksiScreenState extends State<TransaksiScreen> {
       return args['email'] as String;
     }
     return null;
+  }
+
+  Future<void> _refreshTransaksi() {
+    return _viewModel.refresh(emailArgument: _routeEmailArgument);
   }
 
   Future<void> _pickDate({required bool isFrom}) async {
@@ -83,270 +88,247 @@ class _TransaksiScreenState extends State<TransaksiScreen> {
 
         return ColoredBox(
           color: Colors.white,
-          child: SingleChildScrollView(
-            child: Container(
-              width: double.infinity,
-              color: Colors.white,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Container(
-                    padding: const EdgeInsetsDirectional.fromSTEB(
-                      20,
-                      40,
-                      20,
-                      30,
+          child: RefreshIndicator(
+            color: const Color(0xFF315A39),
+            backgroundColor: Colors.white,
+            onRefresh: _refreshTransaksi,
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: Container(
+                width: double.infinity,
+                color: Colors.white,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    GreenPointHeader(
+                      eyebrow: dummyData.greeting,
+                      title: _viewModel.userName,
+                      subtitle: 'Cek transaksi PPOB kamu',
+                      avatarText: _viewModel.userName,
                     ),
-                    decoration: const BoxDecoration(color: Color(0xFF315A39)),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Opacity(
-                          opacity: 0.8,
-                          child: Text(
-                            dummyData.greeting,
+                    Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            dummyData.title,
                             style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 16,
+                              color: Color(0xFF333333),
+                              fontSize: 20,
+                              fontFamily: 'Roboto',
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            dummyData.subtitle,
+                            style: const TextStyle(
+                              color: Color(0xFF666666),
+                              fontSize: 14,
                               fontFamily: 'Roboto',
                               fontWeight: FontWeight.w400,
                             ),
                           ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          _viewModel.userName,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 24,
-                            fontFamily: 'Roboto',
-                            fontWeight: FontWeight.w700,
+                          const SizedBox(height: 30),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(20),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF6F7F8),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Periode Mutasi',
+                                  style: TextStyle(
+                                    color: Color(0xFF333333),
+                                    fontSize: 16,
+                                    fontFamily: 'Roboto',
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                                const SizedBox(height: 16),
+                                const Text(
+                                  'Dari Tanggal:',
+                                  style: TextStyle(
+                                    color: Color(0xFF666666),
+                                    fontSize: 14,
+                                    fontFamily: 'Roboto',
+                                    fontWeight: FontWeight.w400,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                _DateField(
+                                  value: _viewModel.fromDate == null
+                                      ? 'Pilih tanggal'
+                                      : TransaksiViewModel.formatDate(
+                                          TransaksiViewModel.formatDateQuery(
+                                            _viewModel.fromDate!,
+                                          ),
+                                        ),
+                                  onTap: () => _pickDate(isFrom: true),
+                                ),
+                                const SizedBox(height: 16),
+                                const Text(
+                                  'Sampai Tanggal:',
+                                  style: TextStyle(
+                                    color: Color(0xFF666666),
+                                    fontSize: 14,
+                                    fontFamily: 'Roboto',
+                                    fontWeight: FontWeight.w400,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                _DateField(
+                                  value: _viewModel.toDate == null
+                                      ? 'Pilih tanggal'
+                                      : TransaksiViewModel.formatDate(
+                                          TransaksiViewModel.formatDateQuery(
+                                            _viewModel.toDate!,
+                                          ),
+                                        ),
+                                  onTap: () => _pickDate(isFrom: false),
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          dummyData.title,
-                          style: const TextStyle(
-                            color: Color(0xFF333333),
-                            fontSize: 20,
-                            fontFamily: 'Roboto',
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          dummyData.subtitle,
-                          style: const TextStyle(
-                            color: Color(0xFF666666),
-                            fontSize: 14,
-                            fontFamily: 'Roboto',
-                            fontWeight: FontWeight.w400,
-                          ),
-                        ),
-                        const SizedBox(height: 30),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(20),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF6F7F8),
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'Periode Mutasi',
+                          const SizedBox(height: 20),
+                          SizedBox(
+                            width: double.infinity,
+                            height: 50,
+                            child: ElevatedButton(
+                              onPressed: !_viewModel.canSearch
+                                  ? null
+                                  : () async {
+                                      final message = _viewModel
+                                          .validateSearchRange();
+                                      if (message != null) {
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          SnackBar(content: Text(message)),
+                                        );
+                                        return;
+                                      }
+                                      await _viewModel.search();
+                                    },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF315A39),
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                              child: const Text(
+                                'Tampilkan',
                                 style: TextStyle(
-                                  color: Color(0xFF333333),
+                                  color: Colors.white,
                                   fontSize: 16,
                                   fontFamily: 'Roboto',
                                   fontWeight: FontWeight.w700,
                                 ),
                               ),
-                              const SizedBox(height: 16),
-                              const Text(
-                                'Dari Tanggal:',
-                                style: TextStyle(
-                                  color: Color(0xFF666666),
-                                  fontSize: 14,
-                                  fontFamily: 'Roboto',
-                                  fontWeight: FontWeight.w400,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              _DateField(
-                                value: _viewModel.fromDate == null
-                                    ? 'Pilih tanggal'
-                                    : TransaksiViewModel.formatDate(
-                                        TransaksiViewModel.formatDateQuery(
-                                          _viewModel.fromDate!,
-                                        ),
-                                      ),
-                                onTap: () => _pickDate(isFrom: true),
-                              ),
-                              const SizedBox(height: 16),
-                              const Text(
-                                'Sampai Tanggal:',
-                                style: TextStyle(
-                                  color: Color(0xFF666666),
-                                  fontSize: 14,
-                                  fontFamily: 'Roboto',
-                                  fontWeight: FontWeight.w400,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              _DateField(
-                                value: _viewModel.toDate == null
-                                    ? 'Pilih tanggal'
-                                    : TransaksiViewModel.formatDate(
-                                        TransaksiViewModel.formatDateQuery(
-                                          _viewModel.toDate!,
-                                        ),
-                                      ),
-                                onTap: () => _pickDate(isFrom: false),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-                        SizedBox(
-                          width: double.infinity,
-                          height: 50,
-                          child: ElevatedButton(
-                            onPressed: !_viewModel.canSearch
-                                ? null
-                                : () async {
-                                    final message = _viewModel
-                                        .validateSearchRange();
-                                    if (message != null) {
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        SnackBar(content: Text(message)),
-                                      );
-                                      return;
-                                    }
-                                    await _viewModel.search();
-                                  },
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF315A39),
-                              elevation: 0,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                            ),
-                            child: const Text(
-                              'Tampilkan',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 16,
-                                fontFamily: 'Roboto',
-                                fontWeight: FontWeight.w700,
-                              ),
                             ),
                           ),
-                        ),
-                        const SizedBox(height: 20),
-                        if (_viewModel.loadingTransaksi)
-                          Padding(
-                            padding: const EdgeInsets.all(32),
-                            child: Center(
-                              child: Text(
-                                dummyData.emptyState,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                  color: Color(0xFF666666),
-                                  fontSize: 16,
-                                  fontFamily: 'Roboto',
-                                  fontWeight: FontWeight.w400,
+                          const SizedBox(height: 20),
+                          if (_viewModel.loadingTransaksi)
+                            Padding(
+                              padding: const EdgeInsets.all(32),
+                              child: Center(
+                                child: Text(
+                                  dummyData.emptyState,
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    color: Color(0xFF666666),
+                                    fontSize: 16,
+                                    fontFamily: 'Roboto',
+                                    fontWeight: FontWeight.w400,
+                                  ),
+                                ),
+                              ),
+                            )
+                          else if (!_viewModel.hasSearched &&
+                              hasTransactionData)
+                            Column(
+                              children: [
+                                ...visibleTransactions.map(
+                                  (item) => Padding(
+                                    padding: const EdgeInsets.only(bottom: 12),
+                                    child: _TransactionCard(item: item),
+                                  ),
+                                ),
+                                if (_viewModel.currentPage > 0 ||
+                                    _viewModel.hasNextPage)
+                                  PaginationControls(
+                                    currentPage: _viewModel.currentPage,
+                                    hasNextPage: _viewModel.hasNextPage,
+                                    isLoading: _viewModel.loadingTransaksi,
+                                    onPrevious: _viewModel.loadPreviousPage,
+                                    onNext: _viewModel.loadNextPage,
+                                  ),
+                              ],
+                            )
+                          else if (!_viewModel.hasSearched)
+                            const Padding(
+                              padding: EdgeInsets.all(32),
+                              child: Center(
+                                child: Text(
+                                  'Belum ada transaksi pending.',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: Color(0xFF666666),
+                                    fontSize: 16,
+                                    fontFamily: 'Roboto',
+                                    fontWeight: FontWeight.w400,
+                                  ),
+                                ),
+                              ),
+                            )
+                          else if (hasTransactionData)
+                            Column(
+                              children: [
+                                ...visibleTransactions.map(
+                                  (item) => Padding(
+                                    padding: const EdgeInsets.only(bottom: 12),
+                                    child: _TransactionCard(item: item),
+                                  ),
+                                ),
+                                if (_viewModel.currentPage > 0 ||
+                                    _viewModel.hasNextPage)
+                                  PaginationControls(
+                                    currentPage: _viewModel.currentPage,
+                                    hasNextPage: _viewModel.hasNextPage,
+                                    isLoading: _viewModel.loadingTransaksi,
+                                    onPrevious: _viewModel.loadPreviousPage,
+                                    onNext: _viewModel.loadNextPage,
+                                  ),
+                              ],
+                            )
+                          else
+                            Padding(
+                              padding: const EdgeInsets.all(32),
+                              child: Center(
+                                child: Text(
+                                  'Belum ada transaksi PPOB.',
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    color: Color(0xFF666666),
+                                    fontSize: 16,
+                                    fontFamily: 'Roboto',
+                                    fontWeight: FontWeight.w400,
+                                  ),
                                 ),
                               ),
                             ),
-                          )
-                        else if (!_viewModel.hasSearched && hasTransactionData)
-                          Column(
-                            children: [
-                              ...visibleTransactions.map(
-                                (item) => Padding(
-                                  padding: const EdgeInsets.only(bottom: 12),
-                                  child: _TransactionCard(item: item),
-                                ),
-                              ),
-                              if (_viewModel.currentPage > 0 ||
-                                  _viewModel.hasNextPage)
-                                PaginationControls(
-                                  currentPage: _viewModel.currentPage,
-                                  hasNextPage: _viewModel.hasNextPage,
-                                  isLoading: _viewModel.loadingTransaksi,
-                                  onPrevious: _viewModel.loadPreviousPage,
-                                  onNext: _viewModel.loadNextPage,
-                                ),
-                            ],
-                          )
-                        else if (!_viewModel.hasSearched)
-                          const Padding(
-                            padding: EdgeInsets.all(32),
-                            child: Center(
-                              child: Text(
-                                'Belum ada transaksi pending.',
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  color: Color(0xFF666666),
-                                  fontSize: 16,
-                                  fontFamily: 'Roboto',
-                                  fontWeight: FontWeight.w400,
-                                ),
-                              ),
-                            ),
-                          )
-                        else if (hasTransactionData)
-                          Column(
-                            children: [
-                              ...visibleTransactions.map(
-                                (item) => Padding(
-                                  padding: const EdgeInsets.only(bottom: 12),
-                                  child: _TransactionCard(item: item),
-                                ),
-                              ),
-                              if (_viewModel.currentPage > 0 ||
-                                  _viewModel.hasNextPage)
-                                PaginationControls(
-                                  currentPage: _viewModel.currentPage,
-                                  hasNextPage: _viewModel.hasNextPage,
-                                  isLoading: _viewModel.loadingTransaksi,
-                                  onPrevious: _viewModel.loadPreviousPage,
-                                  onNext: _viewModel.loadNextPage,
-                                ),
-                            ],
-                          )
-                        else
-                          Padding(
-                            padding: const EdgeInsets.all(32),
-                            child: Center(
-                              child: Text(
-                                'Belum ada transaksi PPOB.',
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                  color: Color(0xFF666666),
-                                  fontSize: 16,
-                                  fontFamily: 'Roboto',
-                                  fontWeight: FontWeight.w400,
-                                ),
-                              ),
-                            ),
-                          ),
-                        const SizedBox(height: 80),
-                      ],
+                          const SizedBox(height: 80),
+                        ],
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),

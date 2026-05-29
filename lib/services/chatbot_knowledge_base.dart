@@ -51,7 +51,7 @@ class ChatbotKnowledgeBase {
     ])) {
       return 'Untuk setor sampah, buka dashboard lalu pilih "Transaksi Setor Sampah". '
           'Tekan "+ Tambah Jenis Sampah", pilih jenis sampah, masukkan berat minimal 1 kg, '
-          'tambahkan foto untuk setiap jenis sampah yang dipilih, lalu tekan "Hitung Total". '
+          'tambahkan foto untuk setiap jenis sampah yang dipilih, lalu cek total otomatis. '
           'Jika data sudah benar, tekan "Ajukan Setor Sampah".';
     }
 

@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 
+import '../services/app_session_service.dart';
 import '../services/firebase_account_service.dart';
+import '../services/greenpoint_api_service.dart';
 
 enum SignInResultType {
   success,
@@ -79,8 +81,15 @@ class SignInViewModel extends ChangeNotifier {
         identifier: identifier.trim(),
         password: password,
       );
+      final email =
+          user['email']?.toString() ??
+          (identifier.trim().contains('@') ? identifier.trim() : null);
+      await AppSessionService.remember(
+        email: email,
+        accessToken: GreenPointApiService.accessToken,
+      );
 
-      return SignInResult.success(email: user['email']?.toString());
+      return SignInResult.success(email: email);
     } catch (e) {
       if (FirebaseAccountService.isEmailNotVerifiedError(e)) {
         return SignInResult.emailVerificationRequired(
@@ -103,15 +112,14 @@ class SignInViewModel extends ChangeNotifier {
 
     _setResetLoading(true);
     try {
-      await FirebaseAccountService.sendPasswordResetForIdentifier(
-        identifier.trim(),
-      );
+      final message =
+          await FirebaseAccountService.sendPasswordResetForIdentifier(
+            identifier.trim(),
+          );
 
-      return SignInResult.resetSent(
-        'Jika akun ditemukan, link reset password sudah dikirim ke email Anda.',
-      );
+      return SignInResult.resetSent(message);
     } catch (e) {
-      return SignInResult.failure(e.toString());
+      return SignInResult.failure(FirebaseAccountService.messageForError(e));
     } finally {
       _setResetLoading(false);
     }
@@ -124,6 +132,10 @@ class SignInViewModel extends ChangeNotifier {
       if (credential == null) {
         return SignInResult.cancelled();
       }
+      await AppSessionService.remember(
+        email: credential.user?.email,
+        accessToken: GreenPointApiService.accessToken,
+      );
 
       return SignInResult.success(email: credential.user?.email);
     } catch (e) {

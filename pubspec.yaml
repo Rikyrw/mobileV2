@@ -20,8 +20,8 @@ dependencies:
   firebase_auth: ^6.5.0
   cloud_firestore: ^6.4.0
   google_sign_in: ^6.1.0
-  flutter_dotenv: ^5.1.0
   webview_flutter: ^4.10.0
+  shared_preferences: ^2.5.5
 
 dependency_overrides:
   app_links: 6.4.1
@@ -42,7 +42,6 @@ flutter:
   uses-material-design: true
 
   assets:
-    - .env
     - assets/pohon1.png
     - assets/gp.png
     - assets/group1.png

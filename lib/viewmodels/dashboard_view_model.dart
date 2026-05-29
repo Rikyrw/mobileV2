@@ -72,13 +72,14 @@ class DashboardViewModel extends ChangeNotifier {
 
   Future<DashboardVerificationRedirect?> loadUserProfile({
     String? emailArgument,
+    bool awaitDashboard = false,
   }) async {
     if (_loadingProfile) return null;
 
     _setLoadingProfile(true);
     try {
       final firebaseUser = FirebaseAccountService.currentUser;
-      final email = emailArgument ?? firebaseUser?.email;
+      final email = emailArgument ?? firebaseUser?.email ?? _currentEmail;
       _currentEmail = email;
       _notify();
 
@@ -105,7 +106,12 @@ class DashboardViewModel extends ChangeNotifier {
           _notify();
 
           if (nasabahId != null) {
-            unawaited(loadDashboardStats(nasabahId));
+            final dashboardLoad = loadDashboardStats(nasabahId);
+            if (awaitDashboard) {
+              await dashboardLoad;
+            } else {
+              unawaited(dashboardLoad);
+            }
           }
           return null;
         }
@@ -128,6 +134,12 @@ class DashboardViewModel extends ChangeNotifier {
     }
 
     return null;
+  }
+
+  Future<DashboardVerificationRedirect?> refreshDashboard({
+    String? emailArgument,
+  }) {
+    return loadUserProfile(emailArgument: emailArgument, awaitDashboard: true);
   }
 
   Future<void> loadDashboardStats(int nasabahId) async {
@@ -213,7 +225,7 @@ class DashboardViewModel extends ChangeNotifier {
     }
 
     return DashboardSetorPreview(
-      title: 'Setor #${row['id_transaksi_setor'] ?? '-'}',
+      title: 'Setor Sampah',
       subtitle: '${formatWeight(weightKg)} - ${statusLabel(row['status'])}',
       amount: formatRupiah(((row['total_nilai'] as num?) ?? 0).round()),
       date: formatShortDate(row['tanggal_setor']?.toString()),
