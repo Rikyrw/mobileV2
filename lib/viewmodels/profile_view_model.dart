@@ -53,6 +53,8 @@ class ProfileViewModel extends ChangeNotifier {
   String? _fetchedPhone;
   String? _fetchedAddress;
   String? _fetchedSaldo;
+  Object? _fetchedNasabahId;
+  bool _disposed = false;
 
   bool get loadingProfile => _loadingProfile;
   String? get currentEmail => _currentEmail;
@@ -71,6 +73,7 @@ class ProfileViewModel extends ChangeNotifier {
       'email': email,
       'alamat': address,
       'phone': phone,
+      'id_nasabah': _fetchedNasabahId,
     };
   }
 
@@ -80,7 +83,7 @@ class ProfileViewModel extends ChangeNotifier {
     String? emailArgument,
     bool forceRefresh = false,
   }) async {
-    if (_loadingProfile) return;
+    if (_disposed || _loadingProfile) return;
     _setLoadingProfile(true);
 
     try {
@@ -94,6 +97,7 @@ class ProfileViewModel extends ChangeNotifier {
           email,
           forceRefresh: forceRefresh,
         );
+        if (_disposed) return;
 
         if (record != null) {
           _applyRecord(record);
@@ -102,6 +106,7 @@ class ProfileViewModel extends ChangeNotifier {
 
         final firebaseProfile =
             await FirebaseAccountService.currentUserProfile();
+        if (_disposed) return;
         if (firebaseProfile != null && firebaseProfile['email'] == email) {
           _applyRecord(firebaseProfile);
         }
@@ -117,6 +122,12 @@ class ProfileViewModel extends ChangeNotifier {
     await FirebaseAccountService.signOut();
   }
 
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
+
   void _applyRecord(Map<String, dynamic> record) {
     _fetchedUserName =
         (record['nama_lengkap'] as String?) ?? (record['user_name'] as String?);
@@ -126,6 +137,7 @@ class ProfileViewModel extends ChangeNotifier {
     _fetchedPhone = record['no_hp'] as String?;
     _fetchedAddress = record['alamat'] as String?;
     _fetchedSaldo = record['saldo'] != null ? 'Rp ${record['saldo']}' : 'Rp 0';
+    _fetchedNasabahId = record['id_nasabah'];
     _notify();
   }
 
@@ -136,6 +148,6 @@ class ProfileViewModel extends ChangeNotifier {
   }
 
   void _notify() {
-    if (hasListeners) notifyListeners();
+    if (!_disposed) notifyListeners();
   }
 }

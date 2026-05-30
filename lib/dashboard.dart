@@ -1295,7 +1295,6 @@ class _BottomNavItem extends StatelessWidget {
                           switchOutCurve: Curves.easeInCubic,
                           child: Image.asset(
                             iconAsset,
-                            key: ValueKey(iconAsset),
                             width: iconSize,
                             height: iconSize,
                             color: isActive ? Colors.white : inactiveColor,

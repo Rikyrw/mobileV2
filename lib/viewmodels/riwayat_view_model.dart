@@ -55,6 +55,7 @@ class RiwayatViewModel extends ChangeNotifier {
   int _currentPage = 0;
   bool _hasNextPage = false;
   String? _errorMessage;
+  bool _disposed = false;
 
   String get userName => _fetchedUserName ?? dummyData.userName;
   bool get loadingRiwayat => _loadingRiwayat;
@@ -82,7 +83,7 @@ class RiwayatViewModel extends ChangeNotifier {
     bool forceRefresh = false,
     bool loadInitialRiwayat = true,
   }) async {
-    if (_loadingProfile) return;
+    if (_disposed || _loadingProfile) return;
     _setLoadingProfile(true);
 
     try {
@@ -95,6 +96,7 @@ class RiwayatViewModel extends ChangeNotifier {
           email,
           forceRefresh: forceRefresh,
         );
+        if (_disposed) return;
 
         if (record != null) {
           final nasabahId = (record['id_nasabah'] as num?)?.toInt();
@@ -122,6 +124,7 @@ class RiwayatViewModel extends ChangeNotifier {
       forceRefresh: true,
       loadInitialRiwayat: false,
     );
+    if (_disposed) return;
     await loadRiwayat(
       from: _hasSearched ? _fromDate : null,
       to: _hasSearched ? _toDate : null,
@@ -139,7 +142,7 @@ class RiwayatViewModel extends ChangeNotifier {
     bool forceRefresh = false,
   }) async {
     final nasabahId = _nasabahId;
-    if (nasabahId == null || _loadingRiwayat) return;
+    if (_disposed || nasabahId == null || _loadingRiwayat) return;
 
     _setLoadingRiwayat(true);
     _errorMessage = null;
@@ -153,6 +156,7 @@ class RiwayatViewModel extends ChangeNotifier {
         to: pendingOnly ? null : to,
         forceRefresh: forceRefresh,
       );
+      if (_disposed) return;
 
       _riwayatItems = res.items.map(_mapRiwayatItem).toList();
       _currentPage = page;
@@ -224,6 +228,12 @@ class RiwayatViewModel extends ChangeNotifier {
     _errorMessage = null;
   }
 
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
+
   Map<String, dynamic> _mapRiwayatItem(Map<String, dynamic> e) {
     return {
       'id': e['id_transaksi_setor'] as int,
@@ -255,7 +265,7 @@ class RiwayatViewModel extends ChangeNotifier {
   }
 
   void _notify() {
-    notifyListeners();
+    if (!_disposed) notifyListeners();
   }
 
   static String formatDate(String? raw) {

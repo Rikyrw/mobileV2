@@ -350,6 +350,69 @@ class FirebaseAccountService {
     return snapshot.data();
   }
 
+  static Future<void> saveCurrentUserProfileSnapshot(
+    Map<String, dynamic> profile,
+  ) async {
+    if (!_isFirebaseReady) {
+      return;
+    }
+
+    final user = currentUser;
+    if (user == null) {
+      return;
+    }
+
+    final fullName = _text(profile['nama_lengkap']);
+    final userName = _text(profile['user_name']);
+    final email = _text(profile['email'])?.toLowerCase() ?? user.email;
+    final address = _text(profile['alamat']);
+    final phone = _text(profile['no_hp']);
+    final photoUrl = _text(profile['photo_url']);
+    final balance = _number(profile['saldo']);
+
+    if (fullName != null && fullName != _text(user.displayName)) {
+      try {
+        await user.updateDisplayName(fullName);
+      } catch (e) {
+        debugPrint('Firebase display name update skipped: $e');
+      }
+    }
+
+    final data = <String, dynamic>{
+      'uid': user.uid,
+      'updated_at': FieldValue.serverTimestamp(),
+    };
+
+    if (email != null && email.isNotEmpty) {
+      data['email'] = email;
+    }
+    if (userName != null) {
+      data['user_name'] = userName;
+      data['user_name_lowercase'] = userName.toLowerCase();
+    }
+    if (fullName != null) {
+      data['nama_lengkap'] = fullName;
+    }
+    if (address != null) {
+      data['alamat'] = address;
+    }
+    if (phone != null) {
+      data['no_hp'] = phone;
+    }
+    if (photoUrl != null) {
+      data['photo_url'] = photoUrl;
+    }
+    if (balance != null) {
+      data['saldo'] = balance;
+    }
+
+    try {
+      await _users.doc(user.uid).set(data, SetOptions(merge: true));
+    } catch (e) {
+      debugPrint('Firestore profile snapshot update skipped: $e');
+    }
+  }
+
   static Future<void> signOut() async {
     await AppSessionService.clear();
     AppCacheService.invalidateAll();
@@ -667,17 +730,40 @@ class FirebaseAccountService {
     }
 
     try {
+      Map<String, dynamic>? existingProfile;
+      final profileNeedsServerFallback =
+          _text(profile['alamat']) == null || _text(profile['no_hp']) == null;
+      if (profileNeedsServerFallback) {
+        try {
+          existingProfile = await GreenPointApiService.lookupNasabah(email);
+        } catch (e) {
+          debugPrint('Laravel mirror fallback lookup skipped: $e');
+        }
+      }
+
+      final address =
+          _text(profile['alamat']) ?? _text(existingProfile?['alamat']);
+      final phone = _text(profile['no_hp']) ?? _text(existingProfile?['no_hp']);
+      final balance =
+          _number(profile['saldo']) ?? _number(existingProfile?['saldo']) ?? 0;
+
       final mirrored = await GreenPointApiService.mirrorNasabahProfile(
         firebaseUid: user.uid,
         email: email,
-        userName: _text(profile['user_name']) ?? email.split('@').first,
-        fullName: _text(profile['nama_lengkap']) ?? email.split('@').first,
-        phone: _text(profile['no_hp']),
-        address: _text(profile['alamat']) ?? '',
+        userName:
+            _text(profile['user_name']) ??
+            _text(existingProfile?['user_name']) ??
+            email.split('@').first,
+        fullName:
+            _text(profile['nama_lengkap']) ??
+            _text(existingProfile?['nama_lengkap']) ??
+            email.split('@').first,
+        phone: phone,
+        address: address,
         photoUrl: _text(profile['photo_url']),
         googleId: _text(profile['google_id']),
         provider: _text(profile['provider']),
-        balance: profile['saldo'] as num? ?? 0,
+        balance: balance,
       );
 
       final currentBalance = mirrored?['saldo'] as num?;
@@ -994,6 +1080,18 @@ class FirebaseAccountService {
 
     final text = value.toString().trim();
     return text.isEmpty ? null : text;
+  }
+
+  static num? _number(Object? value) {
+    if (value is num) {
+      return value;
+    }
+
+    if (value is String) {
+      return num.tryParse(value.trim());
+    }
+
+    return null;
   }
 
   static String? _providerUid(User user, String providerId) {

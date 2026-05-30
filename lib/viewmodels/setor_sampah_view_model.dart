@@ -398,6 +398,12 @@ class SetorSampahViewModel extends ChangeNotifier {
       return SetorSubmitResult.failure('Data nasabah belum tersedia.');
     }
 
+    if (senderAddress.trim().isEmpty) {
+      return SetorSubmitResult.failure(
+        'Alamat wajib diisi sebelum setor sampah. Perbarui profil terlebih dahulu.',
+      );
+    }
+
     final selectedItems = _selectedValidItems();
     if (selectedItems.isEmpty) {
       return SetorSubmitResult.failure(

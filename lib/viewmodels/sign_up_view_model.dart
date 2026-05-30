@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import '../services/firebase_account_service.dart';
 import '../services/greenpoint_api_service.dart';
+import '../services/password_policy.dart';
 
 enum SignUpResultType {
   success,
@@ -99,8 +100,9 @@ class SignUpViewModel extends ChangeNotifier {
       return SignUpResult.validationError('Password dan konfirmasi tidak sama');
     }
 
-    if (password.length < 8) {
-      return SignUpResult.validationError('Password minimal 8 karakter');
+    final passwordMessage = PasswordPolicy.validate(password);
+    if (passwordMessage != null) {
+      return SignUpResult.validationError(passwordMessage);
     }
 
     _setCreating(true);

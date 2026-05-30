@@ -6,9 +6,14 @@ import 'profil.dart';
 import 'riwayat.dart';
 import 'transaksi.dart';
 import 'viewmodels/main_tab_view_model.dart';
+import 'viewmodels/profile_view_model.dart';
 
 class MainTabScaffold extends StatefulWidget {
-  const MainTabScaffold({super.key, this.initialIndex = homeIndex});
+  const MainTabScaffold({
+    super.key,
+    this.initialIndex = homeIndex,
+    ProfileViewModel? profileViewModel,
+  }) : _profileViewModel = profileViewModel;
 
   static const int homeIndex = 0;
   static const int transaksiIndex = 1;
@@ -17,6 +22,7 @@ class MainTabScaffold extends StatefulWidget {
   static const int profilIndex = 4;
 
   final int initialIndex;
+  final ProfileViewModel? _profileViewModel;
 
   @override
   State<MainTabScaffold> createState() => _MainTabScaffoldState();
@@ -26,6 +32,7 @@ class _MainTabScaffoldState extends State<MainTabScaffold> {
   late final MainTabViewModel _viewModel;
   late final PageController _pageController;
   late final List<Widget?> _pages;
+  bool _loggingOut = false;
 
   @override
   void initState() {
@@ -101,11 +108,33 @@ class _MainTabScaffoldState extends State<MainTabScaffold> {
       case MainTabScaffold.riwayatIndex:
         return const RiwayatScreen();
       case MainTabScaffold.profilIndex:
-        return const ProfilScreen();
+        return ProfilScreen(
+          viewModel: widget._profileViewModel,
+          onLoggedOut: _handleLoggedOut,
+        );
       case MainTabScaffold.homeIndex:
       default:
         return const DashboardScreen();
     }
+  }
+
+  void _handleLoggedOut() {
+    if (!mounted || _loggingOut) return;
+
+    setState(() {
+      _loggingOut = true;
+      for (var index = 0; index < _pages.length; index++) {
+        _pages[index] = null;
+      }
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      Navigator.of(
+        context,
+        rootNavigator: true,
+      ).pushNamedAndRemoveUntil('/welcome', (route) => false);
+    });
   }
 
   List<BottomNavigationItemConfig> _buildNavItems() {
@@ -153,6 +182,13 @@ class _MainTabScaffoldState extends State<MainTabScaffold> {
 
   @override
   Widget build(BuildContext context) {
+    if (_loggingOut) {
+      return const Scaffold(
+        backgroundColor: Colors.white,
+        body: SizedBox.expand(),
+      );
+    }
+
     return AnimatedBuilder(
       animation: _viewModel,
       builder: (context, _) {

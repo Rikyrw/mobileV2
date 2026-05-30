@@ -31,7 +31,7 @@ class _SignInScreenState extends State<SignInScreen> {
       identifier: _emailController.text,
       password: _passwordController.text,
     );
-    _handleAuthResult(result);
+    await _handleAuthResult(result);
   }
 
   Future<void> _sendPasswordReset(String identifier) async {
@@ -196,7 +196,7 @@ class _SignInScreenState extends State<SignInScreen> {
                                 fontFamily: 'Roboto',
                               ),
                               decoration: InputDecoration(
-                                hintText: 'Password (min. 8 characters)',
+                                hintText: 'Password',
                                 hintStyle: const TextStyle(
                                   color: Color(0xFF7A867E),
                                   fontSize: 14,
@@ -375,14 +375,16 @@ class _SignInScreenState extends State<SignInScreen> {
     FocusManager.instance.primaryFocus?.unfocus();
 
     final result = await _viewModel.signInWithGoogle();
-    _handleAuthResult(result);
+    await _handleAuthResult(result);
   }
 
-  void _handleAuthResult(SignInResult result) {
+  Future<void> _handleAuthResult(SignInResult result) async {
     if (!mounted) return;
 
     switch (result.type) {
       case SignInResultType.success:
+        await _showPasswordWarningIfNeeded(result.passwordWarning);
+        if (!mounted) return;
         Navigator.of(context).pushReplacementNamed(
           '/dashboard',
           arguments: {'email': result.email},
@@ -431,6 +433,26 @@ class _SignInScreenState extends State<SignInScreen> {
         behavior: SnackBarBehavior.floating,
         duration: const Duration(seconds: 5),
       ),
+    );
+  }
+
+  Future<void> _showPasswordWarningIfNeeded(String? message) async {
+    if (message == null || message.isEmpty) return;
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Perbarui Password'),
+          content: Text(message),
+          actions: [
+            ElevatedButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Lanjut Masuk'),
+            ),
+          ],
+        );
+      },
     );
   }
 }

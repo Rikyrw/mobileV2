@@ -23,8 +23,9 @@ class ChatbotKnowledgeBase {
       'sign up',
     ])) {
       return 'Untuk daftar akun Green Point, dari halaman awal pilih tombol "Daftar". '
-          'Isi form Nama Lengkap, Username, Email, Alamat, Nomor Telepon, Password minimal 8 karakter, '
-          'dan Confirm Password, lalu tekan "Daftar". Kamu juga bisa memilih "Daftar dengan Google". '
+          'Isi form Nama Lengkap, Username, Email, Alamat, Nomor Telepon, Password minimal 8 karakter '
+          'dengan huruf besar, huruf kecil, angka, karakter khusus, dan Confirm Password, lalu tekan "Daftar". '
+          'Kamu juga bisa memilih "Daftar dengan Google". '
           'Jika berhasil, kamu akan langsung diarahkan ke dashboard.';
     }
 
@@ -97,7 +98,7 @@ class ChatbotKnowledgeBase {
     ])) {
       return 'Untuk melihat atau mengubah profil, buka menu "Profil" di navigasi bawah. '
           'Tekan "Perbarui Profil" untuk mengubah nama, username, email, alamat, atau nomor HP. '
-          'Dari halaman profil kamu juga bisa keluar dari akun lewat ikon logout.';
+          'Dari halaman profil kamu juga bisa logout dari akun lewat ikon logout.';
     }
 
     if (_containsAny(q, const [

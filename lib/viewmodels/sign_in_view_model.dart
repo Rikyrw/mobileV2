@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../services/app_session_service.dart';
 import '../services/firebase_account_service.dart';
 import '../services/greenpoint_api_service.dart';
+import '../services/password_policy.dart';
 
 enum SignInResultType {
   success,
@@ -14,10 +15,19 @@ enum SignInResultType {
 }
 
 class SignInResult {
-  const SignInResult._({required this.type, this.email, this.message});
+  const SignInResult._({
+    required this.type,
+    this.email,
+    this.message,
+    this.passwordWarning,
+  });
 
-  factory SignInResult.success({String? email}) {
-    return SignInResult._(type: SignInResultType.success, email: email);
+  factory SignInResult.success({String? email, String? passwordWarning}) {
+    return SignInResult._(
+      type: SignInResultType.success,
+      email: email,
+      passwordWarning: passwordWarning,
+    );
   }
 
   factory SignInResult.validationError(String message) {
@@ -49,6 +59,7 @@ class SignInResult {
   final SignInResultType type;
   final String? email;
   final String? message;
+  final String? passwordWarning;
 }
 
 class SignInViewModel extends ChangeNotifier {
@@ -89,7 +100,12 @@ class SignInViewModel extends ChangeNotifier {
         accessToken: GreenPointApiService.accessToken,
       );
 
-      return SignInResult.success(email: email);
+      return SignInResult.success(
+        email: email,
+        passwordWarning: PasswordPolicy.isStrong(password)
+            ? null
+            : PasswordPolicy.legacyPasswordWarning,
+      );
     } catch (e) {
       if (FirebaseAccountService.isEmailNotVerifiedError(e)) {
         return SignInResult.emailVerificationRequired(

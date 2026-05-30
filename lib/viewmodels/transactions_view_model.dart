@@ -60,6 +60,7 @@ class TransaksiViewModel extends ChangeNotifier {
   int _currentPage = 0;
   bool _hasNextPage = false;
   String? _errorMessage;
+  bool _disposed = false;
 
   String get userName => _fetchedUserName ?? dummyData.userName;
   bool get loadingTransaksi => _loadingTransaksi;
@@ -85,7 +86,7 @@ class TransaksiViewModel extends ChangeNotifier {
     bool forceRefresh = false,
     bool loadInitialTransactions = true,
   }) async {
-    if (_loadingProfile) return;
+    if (_disposed || _loadingProfile) return;
     _setLoadingProfile(true);
 
     try {
@@ -98,6 +99,7 @@ class TransaksiViewModel extends ChangeNotifier {
           email,
           forceRefresh: forceRefresh,
         );
+        if (_disposed) return;
 
         if (record != null) {
           final nasabahId = (record['id_nasabah'] as num?)?.toInt();
@@ -130,6 +132,7 @@ class TransaksiViewModel extends ChangeNotifier {
       forceRefresh: true,
       loadInitialTransactions: false,
     );
+    if (_disposed) return;
     await loadTransactions(
       pendingOnly: !_hasSearched,
       page: _currentPage,
@@ -143,7 +146,7 @@ class TransaksiViewModel extends ChangeNotifier {
     bool forceRefresh = false,
   }) async {
     final nasabahId = _nasabahId;
-    if (nasabahId == null || _loadingTransaksi) return;
+    if (_disposed || nasabahId == null || _loadingTransaksi) return;
 
     _setLoadingTransaksi(true);
     _errorMessage = null;
@@ -157,6 +160,7 @@ class TransaksiViewModel extends ChangeNotifier {
         to: pendingOnly ? null : _toDate,
         forceRefresh: forceRefresh,
       );
+      if (_disposed) return;
 
       _transactions = res.items.map(_mapTransactionItem).toList();
       _currentPage = page;
@@ -218,6 +222,12 @@ class TransaksiViewModel extends ChangeNotifier {
     _errorMessage = null;
   }
 
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
+
   void _setLoadingProfile(bool value) {
     if (_loadingProfile == value) return;
     _loadingProfile = value;
@@ -244,7 +254,7 @@ class TransaksiViewModel extends ChangeNotifier {
   }
 
   void _notify() {
-    notifyListeners();
+    if (!_disposed) notifyListeners();
   }
 
   static String formatRupiah(int value) {

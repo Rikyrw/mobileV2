@@ -207,7 +207,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                                 fontFamily: 'Roboto',
                               ),
                               decoration: InputDecoration(
-                                hintText: 'Password (min. 8 characters)',
+                                hintText: 'Password kuat',
                                 hintStyle: const TextStyle(
                                   color: Color(0xFF7A867E),
                                   fontSize: 14,
